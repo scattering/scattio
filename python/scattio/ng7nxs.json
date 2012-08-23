@@ -1,0 +1,367 @@
+/*
+NeXus template for NG-7 reflectometry measurements.
+
+=== Data ===
+
+Information provided by the instrument control program
+
+root
+ file_name: name of the file
+ file_time: time the file was created
+
+entry
+  title: description of the experiment
+  start_time: time the measurement started (same as file.file_time)
+  end_time: time the measurement completed (if available)
+  duration: end_time - start_time (if available)
+  collection_time: total counting time across all points
+
+entry.control  (monitor and counting time information)
+  mode[np?]: counting mode, one of monitor|timer|detector
+  preset[np]: target value
+  count_time[np]: count duration for each point
+  count_start[np]: time the point was measured, relative to start_time
+  data[np]: monitor counts
+
+entry.detector  (detector counts and detector angle)
+  polar_angle[np]: detector angle two theta
+  data[np,nx,ny]: detector counts (points X x_pixels X y_pixels)
+
+entry.sample (sample angle and environment data)
+  rotation_angle[np]: incident angle theta
+  temperature[np]: measured temperature (if measured)
+  ... other measured environment variables
+
+entry.DASlogs (values from the data acquisition system)
+  <motor name>
+      description: device description
+      softPostion[np]: actual value for each measured point
+      desiredSoftPosition[np]: target value for each measured point
+      rawPosition[np]: value in underlying controller units (e.g., voltage)
+      soft_limit_min
+      soft_limit_max
+  <environment name>
+      description: device description
+      time[nt]: time at which the sensor was measured
+      value[nt]: value for the sensor at the measured time
+	  average_value[np]: average value during each counting period
+ 	  average_value_error[np]: 1-sigma standard deviation
+ 	  maximum_value[np]: maximum value during each counting period
+ 	  minimum_value[np]: minimum value during each counting period
+
+entry.data
+  link to data, angles, monitor and count time
+
+
+=== Presets ===
+
+Information unavailable to the instrument control program.
+
+root
+  file_time:  (set this to the date/time when you modify the template)
+
+entry.instrument.pencil_detector
+  distance: 2m
+  x_pixel_size: 6"
+  y_pixel_size: 1"
+  geometry.shape.size: [6", 1"]
+  saturation:  neutrons per detector count given detector counts per second
+     rate  correction
+      304  1.0
+     1788  1.0074
+     6812  1.0672
+    13536  1.1399
+    19426  1.2151
+    24022  1.2944
+    27771  1.370
+    31174  1.429
+
+entry.instrument.position_sensitive_detector
+  distance: 2m
+  x_pixel_size: 0.42mm/pixel  (calculated from 10 cm / (246-9+1) pixels)
+  y_pixel_size: 1"
+  x_pixel_offset: computed from x_pixel_width
+  geometry.shape.size: [4", 1"]
+  saturation: cutoff at 8000 counts/second
+
+entry.instrument.monochromator
+  wavelength: 4.75 A
+  dispersion: 2.5% FWHM
+
+entry.instrument.pre_sample_slit1
+  distance: -75"
+entry.instrument.pre_sample_slit2
+  distance: -14"
+entry.instrument.pre_detector_slit1
+  distance:   9"
+entry.instrument.pre_detector_slit2
+  distance:  42"
+
+entry.control
+  distance: -10" (arbitrary value chosen to be between slit2 and sample)
+  efficiency: 1  (incident intensity is around 1/(efficiency*sampled_fraction))
+  sampled_fraction: 1/12
+
+
+=== detectors ===
+
+  We list two available detectors here (pencil detector and position
+  sensitive detector), but only one will be included in the experiment,
+  using select one for the experiment.
+
+  Please fill in detector description (manufacturer/model),
+  type (He3 gas cylinder, He3 PSD, scintillator, fission chamber,
+  proportion counter, ion chamber, ccd, pixel, image plate, cmos, ...),
+
+  We have added a new group: saturation.  This is like the efficiency
+  group, but determines counts as a function of data rate rather than
+  counts as a function of wavelength.
+
+  The detectors should be calibrated for saturation rates.  For point
+  detectors this is easy.  Scan the detector with narrow back slits
+  to determine the beam profile at low intensity.  Next open the back
+  slits, and using the integrated beam profile compute count rate
+  on the detector, and using integrated counts/detector counts,
+  compute the rate dependent scaling factor.  For PSDs this is going
+  to be harder.  With a pinhole back slit we can march a narrow
+  front slit across the range to get a low intensity beam profile,
+  then open the front slits wide to get an integrated beam profile.
+  Saturation across the entire detector may be needed in addition
+  to pixel-by-pixel saturation.  Update the correction
+  and the calibration date
+
+  The PSD for NG-7 has tunable electronics defining the pixel width
+  on the detector.  We have placed the current values in this file.
+  If the electronics are changed, new values will need to be
+  computed and entered in this file.  The following python code generates
+  pixel size and offset data for the PSD:
+
+Given detector width w, number of pixels np, and active pixels pmin to pmax
+generate pixel offset and pixel size.
+
+    import numpy
+    w,np,pmin,pmax = 0.1, 256, 9, 246
+    dx = w/(pmax-pmin+1.)
+    x = dx*(numpy.arange(np) - 0.5*(np-1))
+    x[(x < -w/2.) | (x > w/2.)] = numpy.NaN
+    print "x_pixel_size: %.6f"%dx
+    print "x_pixel_offset:"
+    print " ".join("%.6f"%xi for xi in x)
+
+*/
+
+var entry = {
+definition: { 
+    URL: "http:/\/svn.nexusformat.org/definitions/NXrefscan.nxdl.xml",
+    value: "NXrefscan",
+    },
+facility: "NCNR",
+title: "->trajectory.name",
+experiment_description: "->experiment.title",
+experiment_identifier: "->experiment.proposalId",
+run_cycle: "->experiment.runCycle",
+program_name: "->trajectory.program",
+
+
+sample$NXsample: {
+    polar_angle: "->a3.softPosition",
+    rotation_angle: "->a4.softPosition",
+    temperature: "->temperature.sensor",
+    field: "->magnet.field",
+    },
+control$NXmonitor: {
+    mode: "->counter.countAgainst", // nexus wants monitor|timer|detector?
+    count_start: "->counter.start",
+    count_end: "->counter.end",
+    count_time: "->counter.liveTimer",
+    monitor_preset: "->counter.monitorPreset",
+    count_time_preset: "->counter.timerPreset",
+    detector_preset: "->counter.roiPreset",
+    detector_preset: "->counter.ROIMask",
+    detector_counts: "->counter.liveROI",
+    distance: "0.254 m", // somewhere between sample and slit 2
+    // Monitor properties
+    efficiency: "100 %",
+    absorption: "0 %",
+    sampled_fraction: {value:0.0833, units:""},
+    },
+instrument$NXinstrument: {
+    name: { value: "NCNR NG-7", short_name: "NG7" },
+
+    source$NXsource: {
+        distance: {value:-694, units:"cm"},
+        name: "NCNR",
+        type: "Reactor Neutron Source",
+        probe: "neutron",
+        power: "20 MW",
+        },
+
+
+
+    monochromator$NXmonochromator: {
+        wavelength: "0.475 nm",
+        // 2.5% FWHM wavelength spread expressed as 1-sigma error
+        //    0.475*0.025/2.35
+        wavelength_error: "0.005 nm", 
+        // optional energy equivalent to the given wavelength
+        energy: "3.626 meV",
+        energy_error: "0.039 meV",
+        },
+
+    pre_sample_slit1$NXaperture: {
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: "->s1.softPosition",
+                },
+            translation$NXtranslation: {
+                distances: {
+                    value: [0, 0, -1.905], // 75" before sample
+                    units: "m",
+                    },
+                },
+            },
+        },
+    pre_sample_slit2$NXaperture: {
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: "->s2.softPosition",
+                },
+            translation$NXtranslation: {
+                distances: {
+                    value: [0, 0, -0.3556], // 14" before sample
+                    units: "m",
+                    },
+                },
+            },
+        },
+    pre_detector_slit1$NXaperture: {
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: "->s3.softPosition",
+                },
+            translation$NXtranslation: {
+                distances: {
+                    value: [0, 0, 0.2286], // 9" after sample
+                    units: "m",
+                    },
+                },
+            },
+        },
+    pre_detector_slit2$NXaperture: {
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: "->s4.softPosition",
+                },
+            translation$NXtranslation: {
+                distances: {
+                    value: [0, 0, 1.0668], // 42" after sample
+                    units: "m",
+                    },
+                },
+            },
+        },
+
+    pencil_detector$NXdetector: {
+        local_name: "pencil detector",
+        layout: "point",
+        description: "",
+        type: "",
+        data: "->pointDetector.counts",
+        polar_angle: "->a4.softPosition",
+        distance: "2 m",
+        x_offset: "0 m",
+        x_pixel_size: "0.1524 m", // 6 in * 25.4 mm/in * 1 m / 1000 mm 
+        y_offset: "0 m",
+        y_pixel_size: "0.0254 m", // 1 in * 25.4 mm/in * 1 m / 1000 mm
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: {
+                    value: [0.1524, 0.0254],
+                    units: "m",
+                    }
+                }
+            },
+
+        saturation$NXdata: {
+	        calibration_method$NXnote: {
+	            type: "text/plain",
+	            data: "\
+Correct the measured data using:\n\
+    data = data * interpolate(rate, correction, data/count_time)\n\
+Rates above maximum should not be used.  Rates below the minimum have\n\
+a correction of 1.0.",
+	            },
+	        correction: {
+                value: [1.0,   1.0074,   1.0672,   1.1399,   1.2151,   1.2944,   1.370,   1.429],
+	            units: "",
+                },
+            rate: {
+                value: [304,     1788 ,    6812,    13536,    19426,    24022,   27771,   31174],
+                units: "1/second",
+                },
+	        // Reset calibration date when the saturation correction is measured
+			//calibration_date = "YYYY-MM-DDTHH:MM:SS",
+            },
+        },
+
+    linear_detector$NXdetector: {
+        local_name: "linear detector",
+        layout: "point",
+        description: "",
+        type: "",
+        data: "->areaDetector.counts",
+        polar_angle: "->a4.softPosition",
+        distance: "2 m",
+        note$NXnote: {
+            type: "text/plain",
+            data: "\
+The detector electronics are tuned so that only the central pixels contain data.\n\
+   x_pixel_size = geometry.shape.size[0]/(max-min+1)\n\
+   x_pixel_offset[i] = (i - 0.5*255)*x_pixel_size\n\
+   x_pixel_offset[i<min | i>max] = NaN",
+            },
+        x_offset: {
+            value: [NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, -0.049790, -0.049370, -0.048950, -0.048529, -0.048109, -0.047689, -0.047269, -0.046849, -0.046429, -0.046008, -0.045588, -0.045168, -0.044748, -0.044328, -0.043908, -0.043487, -0.043067, -0.042647, -0.042227, -0.041807, -0.041387, -0.040966, -0.040546, -0.040126, -0.039706, -0.039286, -0.038866, -0.038445, -0.038025, -0.037605, -0.037185, -0.036765, -0.036345, -0.035924, -0.035504, -0.035084, -0.034664, -0.034244, -0.033824, -0.033403, -0.032983, -0.032563, -0.032143, -0.031723, -0.031303, -0.030882, -0.030462, -0.030042, -0.029622, -0.029202, -0.028782, -0.028361, -0.027941, -0.027521, -0.027101, -0.026681, -0.026261, -0.025840, -0.025420, -0.025000, -0.024580, -0.024160, -0.023739, -0.023319, -0.022899, -0.022479, -0.022059, -0.021639, -0.021218, -0.020798, -0.020378, -0.019958, -0.019538, -0.019118, -0.018697, -0.018277, -0.017857, -0.017437, -0.017017, -0.016597, -0.016176, -0.015756, -0.015336, -0.014916, -0.014496, -0.014076, -0.013655, -0.013235, -0.012815, -0.012395, -0.011975, -0.011555, -0.011134, -0.010714, -0.010294, -0.009874, -0.009454, -0.009034, -0.008613, -0.008193, -0.007773, -0.007353, -0.006933, -0.006513, -0.006092, -0.005672, -0.005252, -0.004832, -0.004412, -0.003992, -0.003571, -0.003151, -0.002731, -0.002311, -0.001891, -0.001471, -0.001050, -0.000630, -0.000210, 0.000210, 0.000630, 0.001050, 0.001471, 0.001891, 0.002311, 0.002731, 0.003151, 0.003571, 0.003992, 0.004412, 0.004832, 0.005252, 0.005672, 0.006092, 0.006513, 0.006933, 0.007353, 0.007773, 0.008193, 0.008613, 0.009034, 0.009454, 0.009874, 0.010294, 0.010714, 0.011134, 0.011555, 0.011975, 0.012395, 0.012815, 0.013235, 0.013655, 0.014076, 0.014496, 0.014916, 0.015336, 0.015756, 0.016176, 0.016597, 0.017017, 0.017437, 0.017857, 0.018277, 0.018697, 0.019118, 0.019538, 0.019958, 0.020378, 0.020798, 0.021218, 0.021639, 0.022059, 0.022479, 0.022899, 0.023319, 0.023739, 0.024160, 0.024580, 0.025000, 0.025420, 0.025840, 0.026261, 0.026681, 0.027101, 0.027521, 0.027941, 0.028361, 0.028782, 0.029202, 0.029622, 0.030042, 0.030462, 0.030882, 0.031303, 0.031723, 0.032143, 0.032563, 0.032983, 0.033403, 0.033824, 0.034244, 0.034664, 0.035084, 0.035504, 0.035924, 0.036345, 0.036765, 0.037185, 0.037605, 0.038025, 0.038445, 0.038866, 0.039286, 0.039706, 0.040126, 0.040546, 0.040966, 0.041387, 0.041807, 0.042227, 0.042647, 0.043067, 0.043487, 0.043908, 0.044328, 0.044748, 0.045168, 0.045588, 0.046008, 0.046429, 0.046849, 0.047269, 0.047689, 0.048109, 0.048529, 0.048950, 0.049370, 0.049790, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN],
+            units: "m",
+            },
+        x_pixel_size: "0.000420 m",
+        y_offset: "0 m",
+        y_pixel_size: "0.0254 m", // 1 in * 25.4 mm/in * 1 m / 1000 mm
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxbox",
+                size: {
+                    value: [0.1016, 0.0254],
+                    units: "m",
+                    }
+                }
+            },
+
+        saturation$NXdata: {
+	        calibration_method$NXnote: {
+	            type: "text/plain",
+	            data: "\
+Correct the measured data using:\n\
+    data = data * interpolate(rate, correction, data/count_time)\n\
+Rates above maximum should not be used.  Rates below the minimum have\n\
+a correction of 1.0.",
+                    },
+                correction: {
+                value: [1.0],
+                units: "",
+                },
+            rate: {
+                value: [8000],
+                units: "1/second",
+                },
+                // Reset calibration date when the saturation correction is measured
+                //calibration_date = "YYYY-MM-DDTHH:MM:SS",
+            },
+        },
+    },
+}

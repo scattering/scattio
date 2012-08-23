@@ -1,0 +1,12 @@
+empty_1m:        SILIC001.SA3_SRK_S101
+empty_4m:        SILIC002.SA3_SRK_S102
+empty_cell_1m:   SILIC003.SA3_SRK_S103
+blocked_1m:      SILIC004.SA3_SRK_S104
+trans_empty_cell_4m: SILIC005.SA3_SRK_S105
+trans_sample_4m: SILIC006.SA3_SRK_S106
+blocked_4m:      SILIC007.SA3_SRK_S107
+empty_cell_4m:   SILIC008.SA3_SRK_S108
+sample_1m:       SILIC009.SA3_SRK_S109
+sample_4m:       SILIC010.SA3_SRK_S110
+mask:            DEFAULT.MASK
+div:             PLEX_2NOV2007_NG3.DIV

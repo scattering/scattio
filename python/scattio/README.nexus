@@ -1,0 +1,234 @@
+* add distance, shape, size, offset to NXaperture
+
+   distance is already present in many other devices
+      attenuator, beam, beam_stop, detector, disk_chopper, fermi_chopper
+      moderator, monitor, source
+   geometry object is intended for rendering in laboratory frame, not
+      experimental coordinates
+
+   shape is circle | square | slit | rectangle | ellipse
+   size[1] for circle diameter, slit opening or square size
+   size[2] for rectangle, ellipse
+   shape is relative to sample surface for reflectometry, so vertical and
+       horizontal reflectometers use the x,y coordinates for the resolution
+       calculation even though the lab frame reverses them; this is the
+       same as polar and
+   sometimes need offset x/y, e.g., when moving aperture around detector
+   SNS/PSI identify blades s#t-s#b-s#r-s#r / top-bottom-left-right so are
+       not consistent with each other and do not support circular aperture
+
+   beam_stop.description uses circular|rectangular; could use these, but slit
+       doesn't fit; suggest using beam_stop.shape
+
+   geometry classes are in laboratory frame, and are unnecessarily complex
+      geometry.translate.distances
+      geometry.shape.size
+      geometry.shape.shape => nxflat | nxcylinder | nxbox | nxsphere | nxcone | nxelliptical | nxtoroidal | nxparabolic | nxpolynomial
+
+   SNS TOPAZ uses distance, s1t, s1b, s1l, s1r, origin
+      distance is an SDS
+      s* -> DASlogs/s*, which are positioners with value fields
+      origin is a geometry
+      origin.translation.distance = [0, 0, distance]
+      origin.shape.size containing = [s1r-s1l, s1b-s11, NaN]
+      Note: standard says translation.distances, not translation.distance
+
+   SINQ AMOR uses distance, top, bottom, left, right, geometry
+      distance is an SDS
+      top,bottom,left,right are SDS containing the values
+      geometry.shape.size = [right-left, bottom-top]
+
+   instruments may have aperture with blades that are offset from each
+   other in z (that is, along the beam path), which is not supported by the 
+   aperture class; precise footprint correction code may care
+
+
+* rename SANS apertures
+
+  use source_aperature instead of precollimator_aperture
+  use sample_aperture instead of presample_aperture
+
+* rename NXxraylens to NXlens
+
+  NG7sans has MgF2 lens
+      http://www.ncnr.nist.gov/instruments/ng7sans/focusing_lens.html
+  make sure reduction can compute resolution effects from info given
+
+* add NXspin_selector
+
+  need to know spin state before and after sample
+
+  spin state is usually up or down (polar angle +90 or -90), but it can be
+  any combination of polar and azimuthal angle
+
+  spin state is controlled by He3 polarizers, polarizing supermirrors,
+  spin flippers and/or guide fields; details (flipper currents, etc) are
+  tuned and can be stored for posterity but are generally not used for analysis
+
+  devices may be present or absent; may need to adjust beamline to compensate,
+  e.g., by moving sample relative to monochromator
+
+  mirrors must be aligned; flipper currents and guide fields must be tuned
+
+  analysis requires attenuation factor and efficiency estimate, but in
+  practice these factors cannot be calculated in advance (He3 polarization
+  can change with time; flipper efficiency depends on wavelength and
+  angular divergence) and so must be measured rather than stored.
+
+  NXspin_selector
+    spin_state
+    efficiency   (% polarized)
+    attenuation  (% absorbed or otherwise scattered)
+    NXflipper
+      current
+      length
+    NXpolarizer
+      type (He3 | supermirror | crystal)
+      mode (transmission | reflection)
+      efficiency
+    NXguide_field
+      polar_angle
+      azimuthal_angle
+      length
+
+  this could be extended with X-ray suitable fields
+
+* add count by detector region of interest (ROI)
+
+  new NXmonitor mode 'detector'
+
+  ROI for controlling count time logically belongs in monitor
+
+  record ROI counts even if counting by monitor or timer
+
+  record ROI counts in monitor.integral and x1,x2,y1,y2 in monitor.range
+
+* add periods to monitor.preset to handle NCNR prefactor field
+
+  some detectors need to be paused periodically to read during a count;
+  NCNR uses prefactor to do this, setting a small target and counting
+  prefactor times for a total of preset = target*prefactor
+
+  we will use a periods field to represent prefactor, with the target
+  for the individual periods being preset/periods
+
+* add name field to all components
+
+  certain collimators, detectors, attenuators, sample environment, etc. have
+  names which are useful to record
+
+  NXaperture uses description
+  NXbeam_stop uses description instead of shape
+  NXdetector uses local_name
+  NXenvironment uses short_name
+  NXpositioner uses name
+  NXsample uses name
+  NXsensor uses name and short_name
+  NXsource uses name and @short_name
+
+* attenuator absorption is wavelength dependent
+
+  to compute absorption you need chemical formula, thickness and density
+
+  can assume absorption is linear with wavelength for neutron, and scale
+  attenuation by wavelength spectrum, but that requires the wavelength
+  spectrum
+
+  absorption is dependent on path length, so may vary if attenuator holder
+  is not precise
+
+* add changer to NXsample
+
+  sample holder is not currently available, but changer_position is; record
+  the name of the sample holder in changer.
+
+* monitor with timeout or other conditions
+
+  count vs ROI vs time
+
+* environment variables
+
+  nexus standard
+
+    sample.temperature:NXfield = temperature_log.average_value
+    sample.temperature_log:NXlog = sample.temperature_env.sensor1.value_log
+    sample.temperature_env:NXenviroment
+    sample.temperature_env.sensor1:NXsensor
+
+  there is a lot of overlap between NXenvironment, NXsensor and NXlog
+
+  sensor types:
+    temperature
+    pH
+    magnetic_field
+    electric_field
+    conductivity
+    resistance
+    voltage
+    pressure
+    flow
+    stress
+    strain
+    shear
+    surface_pressure
+
+
+* NX class summary
+
+  useful fields are marked with plus (+)
+
+  == devices ==
+  +aperture
+  +attenuator
+   beam
+  +beam_stop
+   bending_magnet
+   capillary
+  +collimator
+  +detector
+    +event_data
+  +disk_chopper
+  +fermi_chopper
+  +filter
+  +flipper
+   guide
+   insertion_device
+   mirror
+   moderator
+   monitor
+  +monochromator
+     crystal
+     velocity_selector
+   polarizer
+  +sample
+  +source
+   xraylens
+
+  == controllers ==
+  +positioner
+   environment
+   sensor
+  +log
+
+  == file structure ==
+  +root
+  +entry
+   subentry
+  +instrument
+  +collection
+   data
+
+  == info ==
+  +user
+  +note
+   detector_group
+   parameter
+   process
+   characterization
+   geometry
+     orientation
+     shape
+     translation
+
+  == nexus internal ==
+   object

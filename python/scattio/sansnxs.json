@@ -1,0 +1,112 @@
+{
+definition: {
+  // To make live easier for the parser, can't use the comment sequence (//) in
+  // a string, so escape the second slash with a backslash.
+  URL: "http:/\/svn.nexusformat.org/definitions/NXsas.nxdl.xml",
+  value: "NXsas",
+  },
+
+title: "SAS template",
+start_time: "1901-01-01T12:00:00-0500",
+end_time: "1901-01-01T12:00:00-0500",
+file_name: "->trajectory.filename",
+
+control$NXmonitor: {
+    periods: "->counter.prefactor",
+    count_start: "->counter.start",
+    count_end: "->counter.end",
+    count_time: "->counter.liveTimer",
+    monitor_preset: "->counter.monitorPreset",
+    count_time_preset: "->counter.timerPreset",
+    detector_preset: "->counter.roiPreset",
+    detector_mask: "->counter.ROIMask",
+    detector_counts: "->counter.liveROI",
+    monitor_counts: "->counter.liveMonitor",
+    // Monitor properties
+    efficiency: {value:1, units:""},
+    sampled_fraction: {value:0.0833, units:""},
+    },
+
+sample$NXsample: {
+    name: "->sample.sampleName",
+    description: "->sample.sampleDescription",
+	thickness: "->sample.thickness",
+    changer: "->sample.index",
+    changer_position: "->sampleChanger.softPosition",
+    },
+
+
+instrument$NXinstrument: {
+
+  detector$NXdetector: {
+    beam_center_x: "0 mm",
+    beam_center_y: "0 mm",
+    distance: "detectorDistance.softPosition",
+    azimuthal_angle: "0 degree",
+    polar_angle: "0 degree",
+    rotation_angle: "0 degree",
+    x_pixel_size: "5.08 mm",
+    y_pixel_size: "5.08 mm",
+    x_offset: {
+      // python gloss to generate pixel offset values:
+      //   print ",".join("%.2f"%((v-63.5)*5.08) for v in range(128))
+      value: [-322.58,-317.50,-312.42,-307.34,-302.26,-297.18,-292.10,-287.02,-281.94,-276.86,-271.78,-266.70,-261.62,-256.54,-251.46,-246.38,-241.30,-236.22,-231.14,-226.06,-220.98,-215.90,-210.82,-205.74,-200.66,-195.58,-190.50,-185.42,-180.34,-175.26,-170.18,-165.10,-160.02,-154.94,-149.86,-144.78,-139.70,-134.62,-129.54,-124.46,-119.38,-114.30,-109.22,-104.14,-99.06,-93.98,-88.90,-83.82,-78.74,-73.66,-68.58,-63.50,-58.42,-53.34,-48.26,-43.18,-38.10,-33.02,-27.94,-22.86,-17.78,-12.70,-7.62,-2.54,2.54,7.62,12.70,17.78,22.86,27.94,33.02,38.10,43.18,48.26,53.34,58.42,63.50,68.58,73.66,78.74,83.82,88.90,93.98,99.06,104.14,109.22,114.30,119.38,124.46,129.54,134.62,139.70,144.78,149.86,154.94,160.02,165.10,170.18,175.26,180.34,185.42,190.50,195.58,200.66,205.74,210.82,215.90,220.98,226.06,231.14,236.22,241.30,246.38,251.46,256.54,261.62,266.70,271.78,276.86,281.94,287.02,292.10,297.18,302.26,307.34,312.42,317.50,322.58],
+	  units: "mm"
+      },
+    y_offset: {
+      value: [-322.58,-317.50,-312.42,-307.34,-302.26,-297.18,-292.10,-287.02,-281.94,-276.86,-271.78,-266.70,-261.62,-256.54,-251.46,-246.38,-241.30,-236.22,-231.14,-226.06,-220.98,-215.90,-210.82,-205.74,-200.66,-195.58,-190.50,-185.42,-180.34,-175.26,-170.18,-165.10,-160.02,-154.94,-149.86,-144.78,-139.70,-134.62,-129.54,-124.46,-119.38,-114.30,-109.22,-104.14,-99.06,-93.98,-88.90,-83.82,-78.74,-73.66,-68.58,-63.50,-58.42,-53.34,-48.26,-43.18,-38.10,-33.02,-27.94,-22.86,-17.78,-12.70,-7.62,-2.54,2.54,7.62,12.70,17.78,22.86,27.94,33.02,38.10,43.18,48.26,53.34,58.42,63.50,68.58,73.66,78.74,83.82,88.90,93.98,99.06,104.14,109.22,114.30,119.38,124.46,129.54,134.62,139.70,144.78,149.86,154.94,160.02,165.10,170.18,175.26,180.34,185.42,190.50,195.58,200.66,205.74,210.82,215.90,220.98,226.06,231.14,236.22,241.30,246.38,251.46,256.54,261.62,266.70,271.78,276.86,281.94,287.02,292.10,297.18,302.26,307.34,312.42,317.50,322.58],
+	  units: "mm"
+      },
+
+    data: "->areaDetector.counts",
+    event_data$NXevent_data: {
+      time_of_flight: "->eventData.time_of_flight",
+      pixel_number: "->eventData.pixel",
+      events_per_pulse: "->eventData.events_per_pulse",
+      pulse_time: "->eventData.pulse_time",
+      pulse_duration: "->eventData.pulse_duration",
+      },
+
+    },
+
+  attenuator$NXattenuator: {
+    index: "->attenuator.index",
+    },
+
+  beam_stop$NXbeam_stop: {
+    description: "circular",
+    size: "->beamstop.diameter",
+    x: "->beamstop.x",
+    y: "->beamstop.y",
+    distance_to_detector: "0 m",
+    status: "->beamstop.active", //  in|out
+    },
+
+  monochromator$NXmonochromator: {
+    wavelength: "->monochromator.wavelength",
+    wavelength_error: "->monochromator.wavelengthSpread",
+    velocity_selector$NXvelocity_selector: {
+      rotation_speed: "->monochromator.rotationSpeed",
+      },
+    },
+
+  source_aperture$NXaperture: {
+    distance: "->sourceAperture.softPosition",
+    shape: "circle",
+    size: "->sourceAperture.diameter",
+    },
+
+  sample_aperture$NXaperture: {
+    distance: "->sampleAperture.softPosition",
+    size: "->sampleAperture.size",
+    shape: "circle",
+    },
+
+
+  source$NXsource: {
+    name: "NCNR",
+    probe: "neutron",
+    type: "Reactor Neutron Source",
+    },
+  },
+}

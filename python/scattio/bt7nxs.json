@@ -1,0 +1,310 @@
+// NeXus layout for the instrument
+// Group names are defined by dictionaries:
+//   name$NXgroup: { fields } 
+// Fields are defined by 
+//   ->path  is a link to a DAS log entry
+//   $Field  means substitute the configuration value
+//   name$NXgroup: {}  defines a nexus group
+//   
+// The following fields are automatic:
+//   start_time: timestamp on first State record
+//   end_time: timestamp on final Counts record
+//   duration: end_time - start_time
+//   collection_time: sum(count_time)
+//   sample.measurement: ->controller.sensor
+//   sample.measurement_log: ->controller.sensor_log
+//
+// The sample environment fields are generated from the sensor 
+// definitions, with the field name in sample coming from
+// the {measurement: 'fieldname'} in the configuration.
+//
+
+var entry = {
+definition: "TAS",
+facility: "NCNR",
+title: "->trajectory.name",
+experiment_description: "->experiment.title",
+experiment_identifier: "->experiment.proposalId",
+run_cycle: "->experiment.runCycle",
+file_name: "->trajectory.filename",
+program_name: "NICE",
+sample$NXsample: {
+    name: "->sample.sampleName",
+    description: "->sample.sampleDescription",
+    //orientation: "->sample.orientation",
+    unit_cell_a: "->sample.latticeA",
+    unit_cell_b: "->sample.latticeB",
+    unit_cell_c: "->sample.latticeC",
+    unit_cell_alpha: "->sample.latticeAlpha",
+    unit_cell_beta : "->sample.latticeBeta",
+    unit_cell_gamma: "->sample.latticeGamma",
+    chemical_formula: "->sample.ChemicalFormula",
+    polar_angle: "->a3.softPosition",
+    rotation_angle: "->a4.softPosition",
+    horizontal_field: "->hField.field",
+    vertical_field: "->vField.field",
+    spin_state: "->polarization.enumValue",
+    temperature: "->temperature.sensor",
+    field: "->magnet.field",
+    pressure: "->pressureChamber.pressure"
+    },
+control$NXmonitor: {
+    count_start: "->counter.start",
+    count_end: "->counter.end",
+    count_time: "->counter.liveTimer",
+    monitor_preset: "->counter.monitorPreset",
+    count_time_preset: "->counter.timerPreset",
+    detector_preset: "->counter.roiPreset",
+    detector_mask: "->counter.ROIMask",
+    detector_counts: "->counter.liveROI",
+    monitor_counts: "->counter.liveMonitor",
+    // Monitor properties
+    efficiency: "0.1 %",
+    absorption: "0 %",
+    sampled_fraction: {value:0.1, units:""},
+    type: "??"  // Type of monitor        
+    },
+instrument$NXinstrument: {
+    name: "NCNR BT-7",
+    source$NXsource: {
+        distance: {value:-694, units:"cm"},
+        name: "NCNR",
+        type: "Reactor Neutron Source",
+        probe: "neutron",
+        power: "20 MW"
+        },
+    shutter$NXaperture: {
+        description: "Beam shutter",
+        width: "6.4 cm",
+        height: "16 cm"
+        },
+    premonochromator_slit$NXaperture: {
+        description: "Aperture before monochromator.",
+        material: "Li[6]F", // optional
+        width: "->preMonoSlitWidth.softPosition",
+        height: "->preMonoSlitHeight.softPosition",
+        distance: "-150 cm"
+        },
+    premonochromator_filter$NXfilter: {
+        description: "PG",
+        // nexus wants "in|out" but we store ICE "IN|OUT"
+        // analysis prefers True|False
+        status: "->filterControl.enumValue", // "in|out".  
+        // nexus wants 3x3 orientation matrix, but we only have tilt
+        // and rotation columns; we will use polar angle (vertical
+        // rotation) and azimuthal angle (horizontal rotation).
+        // to beam direction) and azimuthal angle (rotation
+        polar_angle: "->filterTilt.softPosition",
+        azimuthal_angle: "->filterRotation.softPosition"
+        //distance: "?? cm", // documentation
+        // If we were to add a temperature controlled filter, it would
+        // need a sensor to record the value
+        //temperature: "->filterTemperature.sensor0",
+        //temperature_log: "->filterTemperature.sensor0_log"
+        },
+    premonochromator_collimator$NXcollimator: {
+        type: "->preMonoColl.type",
+        divergence_x: "->preMonoColl.divergence",
+        divergence_y: "??",
+        geometry$NXgeometry: { //optional
+            shape$NXshape: {
+                shape: "nxflat",
+                size: {
+                    value: [6.4,18],
+                    units: "cm",
+                    // Non-NeXus; proper solution would be to write the
+                    // appropriate geometry object when open
+                    note: "9x18 in open position"
+                    }
+                }
+            }
+        },
+    monochromator$NXcrystal: {
+        description: "Double focusing monochromator with 10 individually controlled blades and a choice of two materials: Cu and PG. DASlogs/monoElev determines which material is in the beam.",
+        distance: { value:206, units:"cm"},
+        material: "->ei.material",
+        dspacing: "->ei.dSpacing",
+        energy: "->ei.energy",
+        vertical_focus: "->mono.verticalFocus", // FLAT|SAGITTAL
+        horizontal_focus: "->mono.horizontalFocus", // FLAT|POINT|ENERGY|VENETIAN
+        polar_angle: "->a1.softPosition",
+        rotation_angle: "->a2.softPosition",
+        // In order to reconstruct the resolution function we need to know
+        // the effective angles of all beam paths between the source and
+        // the detector.
+        x_blade_offset: {
+            value: [-9,-7,-5,-3,-1,1,3,5,7,9],
+            long_name: "Blade x relative to beam center (mm)",
+            units: "cm"
+            },
+        x_blade_angle: "->monoBlades.softPosition",
+        y_blade_offset: {
+            value: [-9,-7,-5,-3,-1,1,3,5,7,9],
+            long_name: "Blade y relative to beam center (mm)",
+            units: "cm"
+            },
+        // y_blade_angle is based on FocusCu or FocusPG.  In practice,
+        // vertical focus is only used to increase intensity and has
+        // no practical consequences for reduction, so the values aren't
+        // needed.
+        //y_blade_angle: ...
+        // Want to choose FocusCU vs. FocusPG based on mono.softPosition
+        curvature_vertical: "->mono.focus",
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxflat",
+                size: { value: [20,20], units: "cm" }
+                }
+            }
+        },
+    //
+    // Beam monitor goes here
+    //
+    presample_polarizer$NXpolarizer: {
+        type: "He[3]"
+        },
+    presample_flipper$NXflipper: {
+        type: "current sheet",
+        comp_current: "->frontPol.cancelCurrent",
+        flip_current: "->frontPol.flipperCurrent",
+        guide_current: "->frontPol.guideCurrent"
+        },
+    presample_collimator$NXcollimator: {
+        description: "->postMonoColl.name",
+        type: "->postMonoColl.type", // open|soller
+        divergence_x: "->postMonoColl.divergence"
+        },
+    presample_slit$NXaperture: {
+        width: "->preSampleSlitWidth.softPosition",
+        height: "->preSampleSlitHeight.softPosition"
+        },
+    //
+    // Sample goes here
+    //
+    preanalyzer_polarizer$NXpolarizer: {
+        type: "He[3]"
+        },
+    preanalyzer_flipper$NXflipper: {
+        type: "current sheet",
+        comp_current: "->backPol.cancelCurrent",
+        flip_current: "->backPol.flipperCurrent",
+        guide_current: "->backPol.guideCurrent"
+        },
+    //preanalyzer_filter$NXfilter: {
+    //    description: "->preAnaFilter.Name",
+    //    },
+    analyzer$NXcrystal: {
+        material: "->analyzer.material",
+        dspacing: "->ef.dSpacing",
+        energy: "->ef.energy",
+        polar_angle: "->a5.softPosition",
+        rotation_angle: "->a6.softPosition",
+        
+        vertical_focus: "FLAT",
+        horizontal_focus: "->ana.focus", // FLAT|ENERGY
+        // In order to reconstruct the resolution function we need to know
+        // the effective angles of all beam paths between the source and
+        // the detector.
+        x_blade_offset: {
+            value: [-9,-7,-5,-3,-1,1,3,5,7,9],
+            long_name: "Blade x relative to beam center (mm)",
+            units: "cm"
+            },
+        x_blade_angle: "->monoBlades.softPosition",
+        y_blade_offset: {
+            value: [-9,-7,-5,-3,-1,1,3,5,7,9],
+            long_name: "Blade y relative to beam center (mm)",
+            units: "cm"
+            },
+        // y_blade_angle is based on FocusCu or FocusPG.  In practice,
+        // vertical focus is only used to increase intensity and has
+        // no practical consequences for reduction, so the values aren't
+        // needed.
+        //y_blade_angle: ...
+        // Want to choose FocusCU vs. FocusPG based on mono.softPosition
+        curvature_vertical: "->mono.focus",
+        geometry$NXgeometry: {
+            shape$NXshape: {
+                shape: "nxflat",
+                size: { value: [20,20], units: "cm" }
+                }
+            }
+        },
+    predetector_collimator$NXcollimator: {
+        type: "->postAnaColl.Type",
+        divergence_x: "->postAnaColl.softPosition"
+        },
+    predetector_slit$NXaperture: {
+        width: "->preAnaSlitWidth.softPosition",
+        height: "->preAnaSlitHeight.softPosition"
+        },
+    diffraction_detector$NXdetector: {
+        description: "A cluster of three tubes in front of the analyzer, with the central tube shadowing the side tubes so that no neutrons are lost between detectors.",
+        type: "He[3]",
+        status: "->diffractionDetector.active", // "in|out"
+        polar_angle: "->a4.softPosition",
+        data: "->diffractionDetector.counts",
+        x_pixel_offset: {value: [-1.25, 0, 1.25], units: "cm"},
+        x_pixel_size: {value: [1.25, 2.5, 1.25], units: "cm"},
+        y_pixel_offset: {value:0, units:"cm"},
+        y_pixel_size: {value:16.5, units:"cm"}
+        },
+    door_detector$NXdetector: {
+        description: "A cluster of eleven overlapping tubes in the direct path of the beam",
+        type: "He[3]",
+        status: "in", // "in|out"  Can't move door detector
+        data: "->doorDetector.counts",
+        x_pixel_offset: {
+            value: [-12.5,-10.0,-7.5,-5.0,-2.5,0.0,2.5,5.0,7.5,10.0,12.5],
+            units: "cm"
+            },
+        x_pixel_size: {
+            // To avoid divide by zero errors, assume a 2mm gap between
+            // the front detectors.
+            value: [2.4,4.8,0.2,4.8,0.2,4.8,0.2,4.8,0.2,4.8,2.4], 
+            units: "cm"
+            },
+        y_pixel_offset: {value:0, units:"cm"},
+        y_pixel_size: {value:15, units:"cm"}
+        },
+    single_detector$NXdetector: {
+        description: "A cluster of three tubes after the analyzer, with the central tube shadowing the side tubes so that no neutrons are lost between detectors.",
+        type: "He[3]",
+        status: "->singleDetector.active", // "in|out"
+        polar_angle: "->a6.softPosition",
+        data: "->singleDetector.counts",
+        x_pixel_offset: {value: [-1.25, 0, 1.25], units: "cm"},
+        x_pixel_size: {value: [1.25, 2.5, 1.25], units: "cm"},
+        y_pixel_offset: {value:0, units:"cm"},
+        y_pixel_size: {value:15, units:"cm"}
+        },
+    PSD$NXdetector: {
+        description: "The single detector is a cluster of three tubes, with the central tube shadowing the side tubes so that no neutrons are lost between detectors.",
+        status: "->linearDetector.active", // "in|out"
+        polar_angle: "->a6.softPosition",
+        data: "->linearDetector.counts",
+        // The PSD spans 36 degrees from -18 to +18 relative to A6.
+        // Pixels are given in angular units rather than length units
+        // since that is what is needed to compute the effective Q-E of
+        // the pixel.  This is not the case for the other detectors
+        // because they are treated as single detectors at the given
+        // A4.A6 angular position, although the solid angle would be
+        // useful when calculating resolution.
+        x_angle_size: {value:0.75, units:"degrees"},
+        x_angle_offset: {
+            value: [
+-17.625, -16.875, -16.125, -15.375, -14.625, -13.875, -13.125,
+-12.375, -11.625, -10.875, -10.125,  -9.375,  -8.625,  -7.875,
+ -7.125,  -6.375,  -5.625,  -4.875,  -4.125,  -3.375,  -2.625,
+ -1.875,  -1.125,  -0.375,   0.375,   1.125,   1.875,   2.625,
+  3.375,   4.125,   4.875,   5.625,   6.375,   7.125,   7.875,
+  8.625,   9.375,  10.125,  10.875,  11.625,  12.375,  13.125,
+ 13.875,  14.625,  15.375,  16.125,  16.875,  17.625
+                   ],
+            units: "degrees"
+            },
+        y_pixel_offset: {value:0, units:"cm"},
+        y_pixel_size: {value:16.5, units:"cm"}
+        }
+    }
+}
