@@ -5,7 +5,7 @@ __all__ = ["open", "group", "field", "append", "extend", "link",
            "walk", "datasets", "summary"]
 import os
 
-import h5py as h5
+from nice.lib.platform_h5py import h5py as h5
 import numpy
 
 from . import iso8601
@@ -58,7 +58,7 @@ def open(filename, mode="r", timestamp=None, creator=None, **kw):
     then the file is opened with the core driver and backing_store=True.
     When it is not provided a unique temporary filename is generated
     and backing_store=False.
-        
+
     Returns an H5 file object.
     """
     if mode=="mem":
@@ -70,10 +70,16 @@ def open(filename, mode="r", timestamp=None, creator=None, **kw):
             global _MEMFILE_COUNT
             _MEMFILE_COUNT += 1
             filename = "temp%05d.nxs"%_MEMFILE_COUNT
-            
+
     preexisting = os.path.exists(filename)
-    
-    f = h5.File(filename, mode, **kw)
+
+    try:
+        f = h5.File(filename, mode, **kw)
+    except IOError, exc:
+        _annotate_exception(exc,"when opening %s with mode %s"%(filename,mode))
+        raise
+        
+        
     if (mode == "a" and not preexisting) or mode == "w":
         if timestamp is None:
             timestr = iso8601.now()
@@ -87,14 +93,13 @@ def open(filename, mode="r", timestamp=None, creator=None, **kw):
         f.attrs['NX_class'] = 'NXroot'
         f.attrs['file_name'] = filename
         f.attrs['file_time'] = timestr
-        # TODO: should use libver to keyword to set the version.
         f.attrs['HDF5_Version'] = h5.version.hdf5_version
         f.attrs['NeXus_version'] = __version__
         if creator is not None:
             f.attrs['creator'] = creator
     return f
 
-def group(node, path, nxclass):
+def group(node, path, nxclass, attrs={}):
     """
     Create a NeXus group.
 
@@ -110,9 +115,10 @@ def group(node, path, nxclass):
     try:
         group = node.create_group(child)
     except Exception,exc:
-        _annotate_exception(exc, "when creating group %r"%path)
+        _annotate_exception(exc, "when creating group %s"%path)
         raise
     group.attrs['NX_class'] = nxclass.encode('UTF-8')
+    for k,v in attrs.items(): group.attrs[k] = v
     return group
 
 def link(node, link):
@@ -139,7 +145,10 @@ def link(node, link):
     """
     if not 'target' in node.attrs:
         node.attrs["target"] = str(node.name) # Force string, not unicode
-    node.parent[link] = node
+    try:
+        node.parent[link] = node
+    except RuntimeError, exc:
+        _annotate_exception(exc, "when linking %s to %s"%(link,node.name))
 
 # Default chunk size for extensible objects
 CHUNK_SIZE = 1000
@@ -149,6 +158,8 @@ _CREATE_OPTS = ['chunks','maxshape','compression',
 def field(node, path, **kw):
     """
     Create a data object.
+    
+    Returns the data set created, or None if the data is empty.
 
     :Parameters:
 
@@ -230,6 +241,11 @@ def field(node, path, **kw):
         Reference to the created dataset.
     """
     node,child = _get_path(node,path)
+    target = "/".join((node.name,child))
+    
+    # Make sure we get an error we understand when trying to overwrite a field
+    if child in node:
+        raise ValueError("data object already exists at %s"%target)
 
     # Set the default field creation opts
     create_opts = {}
@@ -243,9 +259,12 @@ def field(node, path, **kw):
     units = kw.pop('units', None)
     label = kw.pop('label', None)
     attrs = kw.pop('attrs', {})
+    
+    if kw: raise TypeError("unknown keyword(s) "+", ".join(kw.keys()))
 
     # Fill in default creation options
     if data is not None:
+        #print "known data",data
         # Creating a field with existing data
         # Note that NeXus doesn't support scalar field values.
         try: data = data.encode('UTF-8')
@@ -255,10 +274,17 @@ def field(node, path, **kw):
         if dtype is None:
             data = numpy.asarray(data)
         else:
-            data = numpy.asarray(data, dtype=dtype)
+            try:
+                data = numpy.asarray(data, dtype=dtype)
+            except TypeError:
+                raise TypeError("data type %r not understood when creating %s"
+                                %(dtype,target))
         if ('compression' not in create_opts
             and data.nbytes > CHUNK_SIZE):
             create_opts['compression'] = 9
+        # HDF can't handle length 0 fixed size arrays
+        if not all(data.shape):
+            create_opts['maxshape'] = [(dim if dim else None) for dim in data.shape]
         create_opts['data'] = data
         dtype = data.dtype
     else:
@@ -268,7 +294,7 @@ def field(node, path, **kw):
         compression = create_opts.pop('compression', None)
         dtype = numpy.dtype(dtype) if dtype is not None else numpy.float32
         if shape and maxshape is None:
-            raise TypeError("Need to specify shape or maxshape for dataset")
+            raise TypeError("Need to specify shape or maxshape for dataset %s"%target)
         if shape is None:
             shape = [(k if k else 0) for k in maxshape]
         if maxshape is None:
@@ -285,8 +311,8 @@ def field(node, path, **kw):
 
     # Numeric data needs units
     if dtype.kind in ('u','i','f','c') and units is None:
-        raise TypeError("Units required for numeric data at %r"%(node.name+"/"+path))
-
+        raise TypeError("Units required for numeric data at %s"%target)
+    
     # Label defaults to 'Field (units)'
     if label is None:
         name = " ".join(child.split('_')).capitalize()
@@ -298,9 +324,11 @@ def field(node, path, **kw):
     #print "create_opts", create_opts
     # Create the data
     try:
+        if 'data' in create_opts and data.size == 0:
+            return
         dataset = node.create_dataset(child, **create_opts)
     except Exception,exc:
-        _annotate_exception(exc,"when creating field %s"%path)
+        _annotate_exception(exc,"when creating field %s"%target)
         raise
     attrs=attrs.copy()
     if units is not None:
@@ -309,12 +337,15 @@ def field(node, path, **kw):
         attrs['long_name'] = label
     for k,v in attrs.items():
         try:
-            try: v = v.encode('UTF-8')
-            except AttributeError: pass
+            #print type(v),v
+            #try: v = v.encode('UTF-8')
+            #except AttributeError: pass
+            try: v = ''.join([xi for xi in v if ord(xi) < 128])
+            except: pass
             dataset.attrs[k] = v
         except Exception,exc:
             #print k,v
-            _annotate_exception(exc,"when creating attribute %s@%s"%(path,k))
+            _annotate_exception(exc,"when creating attribute %s@%s"%(target,k))
             raise
     return dataset
 
@@ -332,8 +363,14 @@ def append(node, data):
         node.resize(node.shape[0]+1, axis=0)
         node[-1] = data
     """
+    #print node.shape, data.shape
     node.resize(node.shape[0]+1, axis=0)
-    node[-1] = data
+    try:
+        node[-1] = data
+    except Exception, exc:
+        args = exc.args
+        exc.args = tuple([args[0]+" while appending to %s"%node.name]+list(args[1:]))
+        raise
 
 def extend(node, data):
     """
@@ -591,7 +628,9 @@ def _tree_format(node, indent, attrs, recursive):
             if ndim == 0:
                 value = "%g"%field.value
             elif ndim == 1:
-                if size == 1:
+                if size == 0:
+                    value = '[]'
+                elif size == 1:
                     value = "%g"%field.value[0]
                 elif size <= 6:
                     value = ' '.join("%g"%v for v in field.value)
@@ -620,33 +659,60 @@ def _tree_format(node, indent, attrs, recursive):
             yield "".join( (" "*indent, _group_str(g)) )
 
 def _yield_attrs(node, indent):
+    """
+    Iterate over the attribute values of the node, excluding NX_class.
+    """
     for k in sorted(node.attrs.keys()):
         if k not in ("NX_class", "target"):
             yield "".join( (" "*indent, "@", k, ": ", str(node.attrs[k])) )
 
 def _group_str(node):
+    """
+    Return the name and nexus class of a node.
+    """
     if node.name == "/": return "root"
     nxclass = "("+node.attrs["NX_class"]+")" if "NX_class" in node.attrs else ""
     return node.name.split("/")[-1] + nxclass
 
-def _limited_str(s):
+def _limited_str(s, width=40):
+    """
+    Returns the string trimmed to a maximum of one line of width+3 characters,
+    with ... substituted for any trimmed characters.  Leading and trailing
+    blanks are removed.
+    """
     s = str(s).strip()
-    ret = s.split('\n')[0][:40]
+    ret = s.split('\n')[0][:width]
     return ret if len(ret) == len(s) else ret+"..."
 
 
 # ==== Helper routines ====
 def _get_path(node, path):
     """
-    Return parent, child pair, where the entire parent path must exist.
+    Lookup path relative to node.
+    
+    Returns the parent-child pair, where
+    parent is the group handle where the child should be and child is the
+    name of the child.
+    
+    Raises KeyError if the parent group does not exist, but does not check
+    for child.
     """
-    parts = path.split('/')
-    parentpath,child = "/".join(parts[:-1]), parts[-1]
-    if parentpath:
-        node = node[parentpath]
+    if '/' in path:
+        parentpath,child = path.rsplit('/',1)
+        try:
+            node = node[parentpath]
+        except KeyError:
+            raise KeyError("Path %s doesn't exist"%(node.name+"/"+path))
+    else:
+        child = path
     return node,child
 
 def _annotate_exception(exc, msg):
+    """
+    Add an annotation to the current exception, which can then be forwarded
+    to the caller using a bare "raise" statement to reraise the annotated
+    exception.
+    """
     args = exc.args
     if not args:
         arg0 = msg
@@ -658,7 +724,7 @@ def _annotate_exception(exc, msg):
 # ============= Test functions ==========
 
 def test():
-    from . import h5nexus
+    from nice.writer import h5nexus
 
     # Sample data
     counts = [4, 2, 10, 45, 2150, 58, 6, 2, 3, 0]
@@ -696,6 +762,9 @@ def test():
     nxs.close()
 
 def main():
+    """
+    Print a summary tree describing the hdf file.
+    """
     import sys
     if len(sys.argv) > 1:
         if sys.argv[1] == "-a":

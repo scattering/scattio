@@ -19,6 +19,11 @@ Basic usage::
 
 The above examples assume US Eastern Standard Time, and may be different
 in your time zone.
+
+This code is incomplete.  It does not accept compressed formats (YYYYMMDD
+and HHMMSS), week numbers (YYYY-Www-D), day numbers (YYYY-DDD), durations
+P#Y#M#DT#H#M#S, intervals (date/date or date/interval), or repeating intervals
+(R#/date/date or R#/date/interval).
 """
 __all__ = ["parse_date", "format_date", "now", "seconds_since_epoch"]
 
@@ -55,7 +60,7 @@ ISO8601_STRICT = re.compile(r"""^ # anchor to start of string
   (?P<year>[0-9]{4})              # year   YYYY
   -(?P<month>[0-9]{2})            # month  -MM
   -(?P<day>[0-9]{2})              # day    -DD
-  .(?P<hour>[0-9]{2})             # hour   .HH
+  (\ |T)(?P<hour>[0-9]{2})        # hour   THH
   :(?P<minute>[0-9]{2})           # minute :MM
   (:(?P<second>[0-9]{2})          # second :SS
     (\.(?P<fraction>[0-9]+))?     # optional fractional second .SSS to arbitrary precision
@@ -80,9 +85,9 @@ def now(use_microsecond=False):
     If *use_microsecond* then include fractional seconds in the
     returned string.
     """
-    return format_date(time.time(),use_microsecond=use_microsecond)
+    return format_date(time.time(),precision=(6 if use_microsecond else 0))
 
-def format_date(timestamp, use_microsecond=False):
+def format_date(timestamp, precision=0):
     """
     Construct an ISO 8601 time from a timestamp.
 
@@ -106,8 +111,9 @@ def format_date(timestamp, use_microsecond=False):
     fourth case the UTC offset of the time stamp will be preserved in
     formatting.
 
-    If *use_microsecond* is True, encode fractional seconds as well. This
-    only works if *timestamp* is datetime object or seconds since epoch.
+    If *precision* is given, encode fractional seconds with this many digits
+    of precision. This only works if *timestamp* is datetime object or seconds
+    since epoch.
     """
     dt = None
     microsecond = 0
@@ -137,7 +143,7 @@ def format_date(timestamp, use_microsecond=False):
     local = time.strftime('%Y-%m-%dT%H:%M:%S',timestamp)
     sign = "+" if dt >= 0 else "-"
     offset = "%02d:%02d"%(abs(dt)//3600,(abs(dt)%3600)//60)
-    fraction = ".%06d"%microsecond if use_microsecond else ""
+    fraction = ".%0*d"%(precision,microsecond//10**(6-precision)) if precision else ""
     return "".join((local,fraction,sign,offset))
 
 class TimeZone(tzinfo):
