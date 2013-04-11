@@ -451,6 +451,8 @@ class ICE(object):
         while True:  # Repeat until #Columns is read
             count += 1
             line = file.readline()
+            if line[0] != '#':
+                raise IOError("Not a valid ICE file (line %d): %s"%(count,line))
             header.append(line)
             key,value = _parse_keyval(line)
             target = key # Could rename the metadata fields if we wanted
