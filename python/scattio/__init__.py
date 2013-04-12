@@ -48,14 +48,13 @@ instead of Angstroms::
     >>> print reader.data_as(mono["wavelength"],"nm")
     0.476
 
-The complete file structure can be displayed with the h5nexus summary command::
+The complete file structure can be displayed with the h5nexus tree method::
 
-    >>> scattio.h5nexus import summary
-    >>> summary(ng7file)
+    >>> print ng7file.tree(depth=inf)
     
 This will work on any sub-tree as well::
 
-    >>> summary(mono)
+    >>> print mono.tree(depth=inf)
 
 The NeXus standard is somewhat unwieldy since it describes a broad range 
 of instrumentation and experiment styles across many independent institutions.  

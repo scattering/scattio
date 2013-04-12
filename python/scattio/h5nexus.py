@@ -1,13 +1,20 @@
 """
 NeXus file interface.
+
+Note that this changes h5py to include a natural naming interface with
+g.Fname referencing field *name* in Group *g*, and g.Aname referencing
+attribute *name* in the Group or Dataset *g*.  It also adds the tree()
+method to groups, which returns a formatted summary tree.
 """
 __all__ = ["open", "group", "field", "append", "extend", "link",
-           "walk", "datasets", "summary"]
+           "walk", "datasets"]
+import new
 import os
 
 import h5py as h5
 import numpy
 
+# The following forces natural naming onto 
 from . import h5natural
 from . import iso8601
 
@@ -497,37 +504,22 @@ def _simple_copy(source,target,exact=False):
             for k,v in obj.attrs.iteritems():
                 t.attrs[k] = v
 
-def tree(group, depth=1, attrs=True, indent=0):
+def tree(self, depth=1, attrs=True, indent=0):
     """
     Return the structure of the HDF 5 tree as a string.
 
     *group* is the starting group.
 
-    *indent* is the indent for each line.
+    *depth* is the number of levels to descend (default=2), or inf for full tree
 
     *attrs* is False if attributes should be hidden
 
-    *depth* is the number of levels to descend (default=2), or inf for full tree
+    *indent* is the indent for each line.
     """
     return "\n".join(_tree_format(group, indent, attrs, depth))
 # Add Tree attribute to h5py Group
-h5.Group.tree = tree
+h5.Group.tree = new.instancemethod(tree, None, h5.Group)
 
-
-def summary(group, indent=0, attrs=True, depth=1):
-    """
-    Print the structure of an HDF5 tree.
-
-    *group* is the starting group.
-
-    *indent* is the indent for each line.
-
-    *attrs* is False if attributes should be hidden
-
-    *depth* is the number of levels to descend, or inf for full tree
-    """
-    for s in _tree_format(group, indent, attrs, depth=inf):
-        print s
 
 def _tree_format(node, indent, attrs, depth):
     """
@@ -713,7 +705,7 @@ def main():
         for fname in files:
             h = open(fname, "r")
             print "===",fname,"==="
-            summary(h["/"], attrs=attrs)
+            print h.tree(attrs=attrs,depth=inf)
             h.close()
     else:
         print "usage: python -m nice.stream.nexus [-a] files"
