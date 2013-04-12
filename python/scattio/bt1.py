@@ -180,6 +180,7 @@ class ICPBT1(object):
 def monavg(plot=False):
     import sys
     import pylab
+    import matplotlib
     import datetime
 
     files = sys.argv[1:]
@@ -238,15 +239,16 @@ def monavg(plot=False):
     if plot:
         pylab.grid(True)
         ax = pylab.gca()
-        ax.xaxis.set_major_locator(pylab.MonthLocator(interval=3))
+        ax.xaxis.set_major_locator(pylab.MonthLocator(interval=1))
         ax.xaxis.set_minor_locator(pylab.MonthLocator(interval=1,bymonthday=(1,15)))
         ax.xaxis.set_major_formatter(pylab.DateFormatter("%b '%y"))
         #ax.xaxis_date()
-        pylab.title('BT-1 monitor rate for various monochromator-collimator configurations')
-        pylab.xlabel('Time')
-        pylab.ylabel('Monitor Rate (counts/second)')
+        pylab.title('Monitor rate on BT-1', fontsize=28)
+        pylab.xlabel('Time', fontsize=20)
+        pylab.ylabel('Monitor Rate (counts/second)', fontsize=20)
         legend = pylab.legend(loc='best', fancybox=True, numpoints=1)
         legend.get_frame().set_alpha(0.7)
+        matplotlib.rc('font', size=14)
         pylab.show()
 
 def demo():

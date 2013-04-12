@@ -8,6 +8,7 @@ import os
 import h5py as h5
 import numpy
 
+from . import h5natural
 from . import iso8601
 
 # Conforms to the following version of the NeXus standard
@@ -496,7 +497,7 @@ def _simple_copy(source,target,exact=False):
             for k,v in obj.attrs.iteritems():
                 t.attrs[k] = v
 
-def summarystr(group, indent=0, attrs=True, recursive=True):
+def tree(group, depth=1, attrs=True, indent=0):
     """
     Return the structure of the HDF 5 tree as a string.
 
@@ -506,11 +507,14 @@ def summarystr(group, indent=0, attrs=True, recursive=True):
 
     *attrs* is False if attributes should be hidden
 
-    *recursive* is False to show only the current level of the tree.
+    *depth* is the number of levels to descend (default=2), or inf for full tree
     """
-    return "\n".join(_tree_format(group, indent, attrs, recursive))
+    return "\n".join(_tree_format(group, indent, attrs, depth))
+# Add Tree attribute to h5py Group
+h5.Group.tree = tree
 
-def summary(group, indent=0, attrs=True, recursive=True):
+
+def summary(group, indent=0, attrs=True, depth=1):
     """
     Print the structure of an HDF5 tree.
 
@@ -520,12 +524,12 @@ def summary(group, indent=0, attrs=True, recursive=True):
 
     *attrs* is False if attributes should be hidden
 
-    *recursive* is False to show only the current level of the tree.
+    *depth* is the number of levels to descend, or inf for full tree
     """
-    for s in _tree_format(group, indent, attrs, recursive):
+    for s in _tree_format(group, indent, attrs, depth=inf):
         print s
 
-def _tree_format(node, indent, attrs, recursive):
+def _tree_format(node, indent, attrs, depth):
     """
     Return an iterator for the lines in a formatted HDF5 tree.
 
@@ -577,7 +581,9 @@ def _tree_format(node, indent, attrs, recursive):
         # Format string or numeric value
         size = numpy.prod(field.shape)
         if str(field.dtype).startswith("|S"):
-            if ndim == 0:
+            if size == 0:
+                value = '['*ndim + ']'*ndim
+            elif ndim == 0:
                 value = _limited_str(field.value)
             elif ndim == 1:
                 if size == 1:
@@ -588,7 +594,9 @@ def _tree_format(node, indent, attrs, recursive):
             else:
                 value = '[[...]]'
         else:
-            if ndim == 0:
+            if size == 0:
+                value = '['*ndim + ']'*ndim
+            elif ndim == 0:
                 value = "%g"%field.value
             elif ndim == 1:
                 if size == 1:
@@ -611,9 +619,9 @@ def _tree_format(node, indent, attrs, recursive):
 
     # Yield groups.
     # If recursive, show group details, otherwise just show name.
-    if recursive:
+    if depth>0:
         for g in groups:
-            for s in _tree_format(g, indent, attrs, recursive):
+            for s in _tree_format(g, indent, attrs, depth-1):
                 yield s
     else:
         for g in groups:
