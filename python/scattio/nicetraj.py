@@ -1,9 +1,12 @@
 #import json
 import collections
+import os
+import math
 
 import numpy as np
 import math
 import jsonutil
+
 
 def load(filename):
     """
@@ -21,7 +24,7 @@ def parse(raw):
     parsed = jsonutil.relaxed_loads(raw, object_pairs_hook=collections.OrderedDict)
     return parsed
 
-def dryrun(traj):
+def dryrun(traj, filename="traj.trj"):
     """
     return the sequence of points visited by a trajectory.
     """
@@ -29,26 +32,58 @@ def dryrun(traj):
     never_write = []
     always_write = []
     points = []
+    # Set the initial context to contain sprintf and math functions
     context = {"sprintf": lambda pattern,*args: pattern%args}
-    
-    math_funcs = math.__dict__.copy()
-    drop_keys = [key for key in math_funcs if key.startswith('__')]
-    for key in drop_keys: math_funcs.pop(key)
-    context.update(math_funcs)
-    
+    context.update((k,v) for k,v in math.__dict__.items()
+                   if not k.startswith('_')) 
+
+    # Defaults for keywords
+    context.update({
+        'trajName': os.path.splitext(os.path.basename(filename))[0],
+        'descr': '',
+        'alwaysWrite': [],
+        'neverWrite': [],
+        # Patterns for filenames.  These are evaluated for each point 
+        # in the order below.
+        '_fileGroup': "''",
+        '_filePrefix': "trajName",
+        '_fileName': "sprintf('%s%d',filePrefix,fileNum)",
+        '_entryName': "''",
+        # Observed groups. This will be extended each time a new
+        # fileGroup is encountered, including the empty string, and
+        # file number will be incremented as well.
+        '_groups': set()
+    })
+
     constants = context.copy()
     for k,v in traj.items():
-        if k == "neverWrite":
-            never_write = v
-        elif k == "alwaysWrite":
-            always_write = v
-        elif k == "init":
+        if str(k) in ("fileGroup", "fileName", "entryName", "filePrefix"):
+            # delayed evaluation of filename handlers
+            context["_"+k] = v
+        elif str(k) in ("trajName", "descr", "neverWrite", "alwaysWrite"):
+            # keywords evaluated in the current context
+            context[k] = _eval(v, context)
+        elif str(k) == "init":
             _init(v, context)
             constants = context.copy()
-        elif k == "loops":
+        elif str(k) == "loops":
+            # Set volatiles here so they don't end up in constants.  The
+            # variables in constants are not recorded in the dryrun table.
+
+            # Pretend initial state of file counters
+            context.update({
+                'fileNum': 42,
+                'instFileNum': 142,
+                'expPointNum': 1042,
+            })
+
+            # Point number is set to zero at the start of each trajectory
+            context['pointNum'] = 0
+
             points.extend(_loop(v,context))
         else:
             raise ValueError("unknown keyword %r"%k)
+
     return points, constants
 
 class JSObject(object):
@@ -109,9 +144,36 @@ def _one_loop(traj, context):
             loop_vars.append((var, points))
     for ctx in _cycle_context(context, loop_vars):
         if "loops" in traj:
-            for pt in _loop(traj["loops"],ctx): yield pt
+            for pt in _loop(traj["loops"],ctx): 
+                yield pt
+                _update_global_context(context,ctx)
         else:
+            _set_file(ctx)
             yield ctx  # ctx is a point
+            _next_point(ctx)
+            _update_global_context(context,ctx)
+
+def _update_global_context(globals,locals):
+    globals['pointNum'] = locals['pointNum']
+    globals['fileNum'] = locals['fileNum']
+    globals['instFileNum'] = locals['instFileNum']
+    globals['expPointNum'] = locals['expPointNum']
+    globals['_groups'] = locals['_groups']
+
+def _next_point(ctx):
+    ctx['pointNum'] += 1
+    ctx['expPointNum'] += 1
+
+def _set_file(ctx):
+    group  = _eval(ctx['_fileGroup'], ctx)
+    if group not in ctx['_groups']:
+        ctx['_groups'].add(group)
+        ctx['fileNum'] += 1
+        ctx['instFileNum'] += 1
+    ctx['fileGroup'] = group
+    ctx['filePrefix'] = _eval(ctx['_filePrefix'], ctx)
+    ctx['fileName'] = _eval(ctx['_fileName'], ctx)
+    ctx['entryName'] = _eval(ctx['_entryName'], ctx)
 
 def _cycle_context(context, loop_vars):
     """
@@ -284,6 +346,7 @@ POLSPEC_EXAMPLE = """
 {
         "neverWrite": ["i"],
         "alwaysWrite": ["t1"],
+        "entryName": "['A','B','C','D'][polarizationIn+2*polarizationOut]",
         "init": {
                 "down": 0,
                 "up": 1,
@@ -328,6 +391,8 @@ POLSPEC_EXAMPLE = """
 
 SANS_EXAMPLE = """
 {
+  fileGroup: "pointNum",
+
   init: {
 
     "counter.countAgainst": "'TIME'",
@@ -406,7 +471,7 @@ SANS_EXAMPLE = """
 }
 """
 
-def demo(source):
+def demo(source, trajname):
     print_table(*dryrun(parse(source)))
 
 
@@ -419,9 +484,9 @@ def main():
         print >>sys.stderr, "Expected trajectory file, refl or sans"
         sys.exit()
 
-    if sys.argv[1] == "refl": demo(POLSPEC_EXAMPLE)
-    elif sys.argv[1] == "sans": demo(SANS_EXAMPLE)
-    else: demo(load(sys.argv[1]))
+    if sys.argv[1] == "refl": demo(POLSPEC_EXAMPLE, "polrefl.trj")
+    elif sys.argv[1] == "sans": demo(SANS_EXAMPLE, "sans.trj")
+    else: demo(load(sys.argv[1]), sys.argv[1])
 
 if __name__ == "__main__":
     main()
