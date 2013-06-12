@@ -30,6 +30,11 @@ def dryrun(traj):
     always_write = []
     points = []
     context = {"sprintf": lambda pattern,*args: pattern%args}
+    
+    math_funcs = math.__dict__.copy()
+    drop_keys = [key for key in math_funcs if key.startswith('__')]
+    for key in drop_keys: math_funcs.pop(key)
+    context.update(math_funcs)
 
     constants = context.copy()
     for k,v in traj.items():
