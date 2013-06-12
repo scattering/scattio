@@ -1,5 +1,8 @@
 #import json
-import collections
+try:
+    from collections import OrderedDict
+except:
+    from ordered_dict import OrderedDict
 import os
 import math
 
@@ -20,8 +23,8 @@ def parse(raw):
     """
     Parse a NICE trajectory from a string.
     """
-    #parsed = json.JSONDecoder(object_pairs_hook=collections.OrderedDict).decode(raw)
-    parsed = jsonutil.relaxed_loads(raw, object_pairs_hook=collections.OrderedDict)
+    #parsed = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(raw)
+    parsed = jsonutil.relaxed_loads(raw, object_pairs_hook=OrderedDict)
     return parsed
 
 def dryrun(traj, filename="traj.trj"):
@@ -92,7 +95,7 @@ class JSObject(object):
 
 def _init(traj, context):
     for k,v in traj.items():
-        if isinstance(v,collections.OrderedDict):
+        if isinstance(v,OrderedDict):
             obj = JSObject()
             context[k] = obj
             for field_name, field_value in v.items():
@@ -123,7 +126,7 @@ def _one_loop(traj, context):
     loop_vars = []
     loop_len = 1
     for var,value in traj["vary"].items():
-        if isinstance(value, collections.OrderedDict):
+        if isinstance(value, OrderedDict):
             if "range" in value:
                 loop_vars.append((var, _range(value["range"], context, loop_vars)))
             elif "list" in value:
