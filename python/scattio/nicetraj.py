@@ -313,7 +313,7 @@ POLSPEC_EXAMPLE = """
                         "vary": {
                                 "i": {"range": 12},
                                 "t0": "i*12+200",
-                                "skip": "(t0==10)"
+                                "skip": "(t0==248)"
                         },
                         "loops": [{
                                 "vary": {
