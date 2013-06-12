@@ -24,7 +24,7 @@ def parse(raw):
 def dryrun(traj):
     """
     return the sequence of points visited by a trajectory.
-    """ 
+    """
 
     never_write = []
     always_write = []
@@ -35,7 +35,7 @@ def dryrun(traj):
     drop_keys = [key for key in math_funcs if key.startswith('__')]
     for key in drop_keys: math_funcs.pop(key)
     context.update(math_funcs)
-
+    
     constants = context.copy()
     for k,v in traj.items():
         if k == "neverWrite":
@@ -61,7 +61,7 @@ def _init(traj, context):
             obj = JSObject()
             context[k] = obj
             for field_name, field_value in v.items():
-                setattr(obj,field_name, _eval(field_value, context)) 
+                setattr(obj,field_name, _eval(field_value, context))
         else:
             context[k] = _eval(v, context)
 
@@ -90,19 +90,19 @@ def _one_loop(traj, context):
     for var,value in traj["vary"].items():
         if isinstance(value, collections.OrderedDict):
             if "range" in value:
-                 loop_vars.append((var, _range(value["range"], context, loop_vars)))
+                loop_vars.append((var, _range(value["range"], context, loop_vars)))
             elif "list" in value:
-                 loop_vars.append((var, _list(value["list"], context, loop_vars)))
+                loop_vars.append((var, _list(value["list"], context, loop_vars)))
         elif isinstance(value, list):
             if len(loop_vars):
-                points = [_eval(vi, ctx) 
+                points = [_eval(vi, ctx)
                           for vi,ctx in zip(value, _cycle_context(context,loop_vars))]
             else:
                 points = [_eval(vi, context) for vi in value]
             loop_vars.append((var, points))
         else:
             if len(loop_vars):
-                points = [_eval(value, ctx) 
+                points = [_eval(value, ctx)
                           for ctx in _cycle_context(context,loop_vars)]
             else:
                 points = [_eval(value, context)]
@@ -122,7 +122,7 @@ def _cycle_context(context, loop_vars):
         ctx = context.copy()
         ctx.update(zip(names,vi))
         yield ctx
-    
+
 def _range(traj, context, loop_vars):
     """
     Process the range directive in loop:vary.
@@ -145,7 +145,7 @@ def _range(traj, context, loop_vars):
         stop = _eval(trajcopy.pop("stop",None), context)
         n = _eval(trajcopy.pop("n",None), context)
         center = _eval(trajcopy.pop("center",None), context)
-        if trajcopy: 
+        if trajcopy:
             raise ValueError("unknown keys in range "+str(trajcopy))
 
         bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None)
@@ -182,7 +182,7 @@ def _range(traj, context, loop_vars):
             raise ValueError("invalid parameter combination in range "+str(traj))
 
     if loop_len and len(points) != loop_len:
-        raise ValueError("range different from number of points in loop for "+str(traj)) 
+        raise ValueError("range different from number of points in loop for "+str(traj))
     return points
 
 def _list(traj, context, loop_vars):
@@ -194,7 +194,7 @@ def _list(traj, context, loop_vars):
     trajcopy = traj.copy()
     points = trajcopy.pop("value",[])
     cyclic = trajcopy.pop("cyclic",False)
-    if trajcopy: 
+    if trajcopy:
         raise ValueError("unknown keys in list "+str(trajcopy))
     if len(points) == 0:
         raise ValueError("list has no length "+str(traj))
@@ -205,18 +205,18 @@ def _list(traj, context, loop_vars):
         points = [_eval(pt, context) for pt in points]
     elif cyclic:
         n = len(points)
-        points = [_eval(points[i%n], ctx) 
+        points = [_eval(points[i%n], ctx)
                   for i,ctx in enumerate(_cycle_context(context, loop_vars))]
     else:
         n = len(points)-1
-        points = [_eval(points[min(i,n)], ctx) 
+        points = [_eval(points[min(i,n)], ctx)
                   for i,ctx in enumerate(_cycle_context(context, loop_vars))]
     return points
 
 
 def columnate(points, constants):
     """
-    Convert a ragged point list [{k:value}] into regular columns {k:[value]}, with 
+    Convert a ragged point list [{k:value}] into regular columns {k:[value]}, with
     missing values replaced by None.
     """
     if len(points) == 0: raise ValueError("No points to columnate")
@@ -282,54 +282,54 @@ def print_table(points, constants):
 
 POLSPEC_EXAMPLE = """
 {
-	"neverWrite": ["i"],
-	"alwaysWrite": ["t1"],
-	"init": {
-		"down": 0,
-		"up": 1,
-		"counter": {
-			"countAgainst": "'MONITOR'",
-			"monitorPreset": 30000
-		},
-		"vertSlitAperture1": 0.2,
-		"vertSlitAperture2": 0.2
-	},
-	"loops": [{
-		"vary": {
-			"detectorAngle": {
-				"range": {
-					"start": 0,"stop": 4,"step": 0.02}
-			},
-			"sampleAngle": "detectorAngle/2.0",
-			"slit1Aperture": [1,2,3,4,5],
-			"slit2Aperture": {
-				"list": {
-					"value": [1,2,3,1],
-					"cyclic": true
-				}
-			}
-		},
-		"loops": [{
-			"vary": {
-				"i": {"range": 12},
-				"t0": "i*12+200",
-				"skip": "(t0==10)"
-			},
-			"loops": [{
-				"vary": {
-					"polarizationIn": ["down","up","down","up"],
-					"polarizationOut": ["down","down","up","up"]
-				}
-			}]
-		}]
-	}]
+        "neverWrite": ["i"],
+        "alwaysWrite": ["t1"],
+        "init": {
+                "down": 0,
+                "up": 1,
+                "counter": {
+                        "countAgainst": "'MONITOR'",
+                        "monitorPreset": 30000
+                },
+                "vertSlitAperture1": 0.2,
+                "vertSlitAperture2": 0.2
+        },
+        "loops": [{
+                "vary": {
+                        "detectorAngle": {
+                                "range": {
+                                        "start": 0,"stop": 4,"step": 0.02}
+                        },
+                        "sampleAngle": "detectorAngle/2.0",
+                        "slit1Aperture": [1,2,3,4,5],
+                        "slit2Aperture": {
+                                "list": {
+                                        "value": [1,2,3,1],
+                                        "cyclic": true
+                                }
+                        }
+                },
+                "loops": [{
+                        "vary": {
+                                "i": {"range": 12},
+                                "t0": "i*12+200",
+                                "skip": "(t0==10)"
+                        },
+                        "loops": [{
+                                "vary": {
+                                        "polarizationIn": ["down","up","down","up"],
+                                        "polarizationOut": ["down","down","up","up"]
+                                }
+                        }]
+                }]
+        }]
 }
 """
 
 SANS_EXAMPLE = """
 {
   init: {
-    
+
     "counter.countAgainst": "'TIME'",
     sample: {
       mode: "'Chamber'",
@@ -337,9 +337,9 @@ SANS_EXAMPLE = """
       sampleThickness: 1
     },
 
-   	 
+
     CONFIGS: { // helper map
-    
+
       "1.5m6": { attenuator: 0, wavelength: 6, wavelengthSpread: 0.132, nguide: 2, guide:{aperture: 50.8}, beamstop: 4, beamStopX: 0.5, beamStopY: -0.3, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 150, detectorOffset: 25 },
       "1.5m6t": { attenuator: 9, wavelength: 6, wavelengthSpread: 0.132, nguide: 2, guide:{aperture: 50.8}, beamstop: 4, beamStopX: -15, beamStopY: -0.3, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 150, detectorOffset: 25 },
       "5m6": { attenuator: 0, wavelength: 6, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: 0.6, beamStopY: -0.4, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 },
@@ -347,24 +347,24 @@ SANS_EXAMPLE = """
       "5m20": { attenuator: 0, wavelength: 20, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: 0.2, beamStopY: -0.1, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 },
       "5m20t": { attenuator: 1, wavelength: 20, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: 0.2, beamStopY: -0.1, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 }
     },
-    
+
     SAMPLE_NAMES: ["empty cell", "blocked beam", "sample1", "sample2", "sample3", "sample4", "sample5", "sample6", "sample7", "sample8"],
-    
+
     COUNT_TIMES: {
-      "empty cell": 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      "empty cell":     {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
       "blocked beam": {"1.5m6":300, "5m6":900, "5m6t":0, "5m20":1800, "5m20t":0},
-      sample1: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample2: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample3: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample4: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample5: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample6: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample7: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
-      sample8: 	{"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180}
+      sample1:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample2:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample3:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample4:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample5:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample6:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample7:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
+      sample8:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180}
     },
-    
+
     CONFIGURATION_ORDER: ["1.5m6", "5m6", "5m6t", "5m20t", "5m20"],
-   	 
+
     SAMPLE_INTENTS: {
       "empty cell": "'EmptyCell'",
       "blocked beam": "'BlockedBeam'",
@@ -375,7 +375,7 @@ SANS_EXAMPLE = """
       sample5: "'sample'",
       sample6: "'sample'",
       sample7: "'sample'",
-      sample8: "'sample'"	 
+      sample8: "'sample'"
     }
   },
   loops: [{ // temp loop
@@ -389,17 +389,17 @@ SANS_EXAMPLE = """
         // "deviceConfig"
         // is in the device model
         deviceConfig: "CONFIGS[CONFIGURATION_ORDER[CTR]]"
-      },   
+      },
       loops: [{ // sample loop
         vary: {
-          S: {range: 10},                    	 
-          SNAME: "SAMPLE_NAMES[S]",    	 
+          S: {range: 10},
+          SNAME: "SAMPLE_NAMES[S]",
           sample: {index: "S" },
           INTENT: "SAMPLE_INTENTS[SNAME]",
           COUNTER_VALUE : "COUNT_TIMES[SNAME][CONFIGURATION_ORDER[CTR]]",
-          counter: {timePreset: "COUNTER_VALUE"},   							 
+          counter: {timePreset: "COUNTER_VALUE"},
           skip : "COUNTER_VALUE == 0" // skip the point
-        },    
+        },
       }] // end of sample loop
     }]// end of guideConfigs loop
   }]// end of temperature loop
@@ -418,11 +418,11 @@ def main():
     if len(sys.argv) != 2:
         print >>sys.stderr, "Expected trajectory file, refl or sans"
         sys.exit()
-   
-    if sys.argv[1] == "refl": demo(POLSPEC_EXAMPLE) 
+
+    if sys.argv[1] == "refl": demo(POLSPEC_EXAMPLE)
     elif sys.argv[1] == "sans": demo(SANS_EXAMPLE)
     else: demo(load(sys.argv[1]))
 
 if __name__ == "__main__":
     main()
-
+>>>>>>> c212761ed737e27bb7955ffcc4a7d195046aaeec

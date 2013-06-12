@@ -218,18 +218,20 @@ def monavg(plot=False):
             points.append((data.timestamp,monitors/seconds,data.path))
             count += 1
 
-    if len(summary) > 7:
+    if False and len(summary) > 7:
         items = list(sorted((len(v),k) for k,v in summary.items()))
         _,saved_keys = zip(*items[-7:])
         summary = dict([(k,summary[k]) for k in saved_keys])
 
     plot = plot and not count < 5
-    for k,v in sorted(summary.items()):
+    for i,(k,v) in enumerate(sorted(summary.items())):
         if plot:
             #if len(v) < 10: continue
             dates,rates,paths = zip(*v)
             dates = [datetime.datetime.fromtimestamp(time.mktime(s)) for s in dates]
-            pylab.plot(pylab.date2num(dates),rates, 'o', label=k, hold=True)
+            h = pylab.plot(pylab.date2num(dates),rates, 'o' if i<7 else '^', label=k, hold=True)
+            #print "add hline",h[0].get_color(), pylab.median(rates)
+            pylab.axhline(pylab.median(rates), color=h[0].get_color(), linestyle=':', hold=True)
         else:
             print "== %s =="%k
             for date,rate,path in v:
@@ -237,11 +239,45 @@ def monavg(plot=False):
                 print stamp,"%10.3f"%rate,path
 
     if plot:
-        pylab.grid(True)
+        pylab.grid(which='y')
         ax = pylab.gca()
-        ax.xaxis.set_major_locator(pylab.MonthLocator(interval=1))
-        ax.xaxis.set_minor_locator(pylab.MonthLocator(interval=1,bymonthday=(1,15)))
-        ax.xaxis.set_major_formatter(pylab.DateFormatter("%b '%y"))
+        days = ax.dataLim.xmax - ax.dataLim.xmin
+        #print "days",days, ax.dataLim.xmin, ax.dataLim.xmax
+        if days > 5*365:
+             major = pylab.YearLocator(interval=1)
+             minor = pylab.MonthLocator(interval=6)
+             label = pylab.DateFormatter("'%y")
+        elif days > 2*365:
+             major = pylab.MonthLocator(interval=6)
+             minor = pylab.MonthLocator(interval=3)
+             label = pylab.DateFormatter("%b '%y")
+        elif days > 365:
+             major = pylab.MonthLocator(interval=3)
+             minor = pylab.MonthLocator(interval=1)
+             label = pylab.DateFormatter("%b '%y")
+        elif days > 365/2:
+             major = pylab.MonthLocator(interval=2)
+             minor = pylab.MonthLocator(interval=1,bymonthday=(1,15))
+             label = pylab.DateFormatter("%b '%y")
+        elif days > 365/6:
+             major = pylab.MonthLocator(interval=1)
+             minor = pylab.MonthLocator(interval=1,bymonthday=(1,15))
+             label = pylab.DateFormatter("%b '%y")
+        elif days > 15:
+             major = pylab.MonthLocator(interval=1,bymonthday=(1,10,20))
+             minor = pylab.DayLocator(interval=1)
+             label = pylab.DateFormatter("%b %d")
+        elif days > 5:
+             major = pylab.DayLocator(interval=5)
+             minor = pylab.DayLocator(interval=1)
+             label = pylab.DateFormatter("%b %d")
+        else:
+             major = pylab.DayLocator(interval=1)
+             minor = pylab.DayLocator(interval=1)
+             label = pylab.DateFormatter("%b %d")
+        ax.xaxis.set_major_locator(major)
+        ax.xaxis.set_minor_locator(minor)
+        ax.xaxis.set_major_formatter(label)
         #ax.xaxis_date()
         pylab.title('Monitor rate on BT-1', fontsize=28)
         pylab.xlabel('Time', fontsize=20)
