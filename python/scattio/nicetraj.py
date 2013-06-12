@@ -105,6 +105,8 @@ def _eval(expr, context):
     Evaluate an expression in a context.
     """
     if isinstance(expr, basestring):
+        #import pprint; pprint.pprint(context)
+        #print "eval",expr
         return eval(expr, {}, context)
     else:
         return expr
@@ -194,7 +196,9 @@ def _range(traj, context, loop_vars):
     loop_len = len(loop_vars[0][1]) if len(loop_vars)>0 else 0
 
     if isinstance(traj, int):
+        # range: n -> [0, 1, ..., n-1]
         points = np.arange(traj)
+        #points = np.arange(traj+1)
 
     else:
         #print "_range"
@@ -207,38 +211,67 @@ def _range(traj, context, loop_vars):
         stop = _eval(trajcopy.pop("stop",None), context)
         n = _eval(trajcopy.pop("n",None), context)
         center = _eval(trajcopy.pop("center",None), context)
+        width = _eval(trajcopy.pop("width",None), context)
         if trajcopy:
             raise ValueError("unknown keys in range "+str(trajcopy))
 
-        bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None)
+        bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None) + 32*(width is not None)
         n_or_len = n if n is not None else loop_len
-        # There are ten ways to pick three of start, step, stop, n, center
-        if bits == 1+2+4: # start - step - stop
+
+        # There are twenty ways to pick three of start, step, stop, n, center, width
+        # TODO: what about step < 0?
+        if bits == 1+2+4: # start - stop - step
             points = np.arange(start,stop+1e-5*step,step)
-        elif bits == (1+4+16): # start - step - center
-            points = np.arange(start,2*center-start+1e-5*step,step)
-        elif bits == (2+4+16): # center - step - stop
-            points = np.arange(stop,-2*center-stop-1e-5*step,-step)[::-1]
         elif bits in (1+2+8,1+2): # start - stop - n
             points = np.linspace(start,stop,n_or_len)
-        elif bits in (1+4+8,1+4): # start - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.arange(start,start+n_or_len*step+1e-5*step,step)
-        elif bits in (2+4+8,2+4): # stop - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.arange(stop,stop-n_or_len*step-1e-5*step,-step)[::-1]
-        elif bits in (16+4+8,16+4): # center - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(center-(n_or_len-1)*step/2.0, center+(n_or_len-1)*step/2.0, n_or_len)
+
+        elif bits == (1+16+4): # start - center - step
+            points = np.arange(start,2*center-start+1e-5*step,step)
         elif bits in (1+16+8,1+16): # start - center - n
             if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
             points = np.linspace(start,2*center-start,n_or_len)
+        elif bits == 1+32+4: # start - width - step
+            points = np.arange(start,start+width+1e-5*step,step)
+        elif bits in (1+32+8,1+32): # start - width - n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(start,start+width,n_or_len)
+
+        elif bits == (2+16+4): # stop - center - step
+            points = np.arange(stop,2*center-stop-1e-5*step,-step)[::-1]
         elif bits in (2+16+8,2+16): # stop - center - n
             if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(-stop-2*center,stop,n_or_len)
-        # start - stop - center is invalid
-        elif bits in (8,0):  # n by itself means 0, 1, ..., n-1
+            points = np.linspace(2*center-stop,stop,n_or_len)
+        elif bits == (2+32+4): # stop - width - step
+            points = np.arange(stop,stop-width-1e-5*step,-step)[::-1]
+        elif bits in (2+32+8,2+32): # stop - width - n
             if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(stop-width,stop,n_or_len)
+
+        elif bits == (16+32+4): # center - width - step
+            points = np.arange(center-width/2, center+width/2+1e-5*step, step)
+        elif bits in (16+32+8,16+32): # center - width - n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(center-width/2,center+width/2,n_or_len)
+
+        elif bits in (1+4+8,1+4): # start - step - n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(start,start+(n_or_len-1)*step,n_or_len)
+        elif bits in (2+4+8,2+4): # stop - step - n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(stop-(n_or_len-1)*step,stop,n_or_len)
+        elif bits in (16+4+8,16+4): # center - step - n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            points = np.linspace(center-(n_or_len-1)*step/2.0, center+(n_or_len-1)*step/2.0, n_or_len)
+
+        # width - step - n:  no anchor at start, stop or center
+        # start - stop - width: no step size or number of steps
+        # start - stop - center:  no step size or number of steps
+        # start - center - width: no step size or number of steps
+        # stop - center - width: no step size or number of steps
+
+        elif bits in (8,0):  # n by itself means 0, 1, ..., n
+            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
+            #points = np.arange(n+1 if n else loop_len)
             points = np.arange(n_or_len)
         else:
             raise ValueError("invalid parameter combination in range "+str(traj))
@@ -471,8 +504,8 @@ SANS_EXAMPLE = """
 }
 """
 
-def demo(source, trajname):
-    print_table(*dryrun(parse(source)))
+def demo(traj, trajname):
+    print_table(*dryrun(traj))
 
 
 def main():
@@ -484,8 +517,8 @@ def main():
         print >>sys.stderr, "Expected trajectory file, refl or sans"
         sys.exit()
 
-    if sys.argv[1] == "refl": demo(POLSPEC_EXAMPLE, "polrefl.trj")
-    elif sys.argv[1] == "sans": demo(SANS_EXAMPLE, "sans.trj")
+    if sys.argv[1] == "refl": demo(parse(POLSPEC_EXAMPLE), "polrefl.trj")
+    elif sys.argv[1] == "sans": demo(parse(SANS_EXAMPLE), "sans.trj")
     else: demo(load(sys.argv[1]), sys.argv[1])
 
 if __name__ == "__main__":
