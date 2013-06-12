@@ -346,6 +346,7 @@ POLSPEC_EXAMPLE = """
 {
         "neverWrite": ["i"],
         "alwaysWrite": ["t1"],
+        "entryName": "['A','B','C','D'][polarizationIn+2*polarizationOut]",
         "init": {
                 "down": 0,
                 "up": 1,
