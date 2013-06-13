@@ -140,6 +140,9 @@ or <http://www.fsf.org/licensing/>.
 
 """
 
+try: from collections import OrderedDict
+except: from ordered_dict import OrderedDict
+
 # ------------------------------
 # useful global constants
 
@@ -1555,8 +1558,6 @@ class JSON(object):
             isdict = True
             closer = '}'
             if self._allow_ordered_dict:
-                try: from collections import OrderedDict
-                except: from ordered_dict import OrderedDict
                 obj = OrderedDict()
             else:
                 obj = {}

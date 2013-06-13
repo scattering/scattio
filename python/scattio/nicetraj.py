@@ -8,6 +8,7 @@ import numpy as np
 import math
 import jsonutil
 import demjson
+from demjson import OrderedDict
 
 
 def load(filename):
@@ -25,7 +26,21 @@ def parse(raw):
     #parsed = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(raw)
     #parsed = jsonutil.relaxed_loads(raw, ordered=True)
     parsed = demjson.decode(raw, allow_ordered_dict=True)
+    parsed = tostr(parsed)
     return parsed
+
+def tostr(tree):
+    """ make unicode to string """
+    if hasattr(tree, 'items'):
+        return OrderedDict((str(k),tostr(v)) for k,v in tree.items())
+    elif isinstance(tree, list):
+        return [tostr(v) for v in tree]
+    elif isinstance(tree, basestring):
+        return str(tree)
+    elif isinstance(tree, np.float64) and int(tree) == tree:
+        return int(tree)
+    else:
+        return tree
 
 def dryrun(traj, filename="traj.trj"):
     """
@@ -110,7 +125,11 @@ def _eval(expr, context):
     if isinstance(expr, basestring):
         #import pprint; pprint.pprint(context)
         #print "eval",expr
-        return eval(expr, {}, context)
+        try:
+           return eval(expr, {}, context)
+        except Exception,exc:
+           print context
+           raise exc.__class__, str(exc) + " when evaluating " + expr
     else:
         return expr
 
@@ -222,17 +241,20 @@ def _delta_steps(traj, start, stop, step, logsteps, reverse=False):
     if reverse:
         if logsteps:
             if start > stop: step = 1/step
-            return _logrange(stop, start, 1/step)[::-1]
+            points = _logrange(stop, start, 1/step)[::-1]
         else:
             if start > stop:  step = -step
-            return np.arange(stop, start-1e-5*step, -step)[::-1]
+            points = np.arange(stop, start-1e-5*step, -step)[::-1]
     else:
         if logsteps:
             if start > stop: step = 1/step
-            return _logrange(start, stop, step)
+            points = _logrange(start, stop, step)
         else:
             if start > stop:  step = -step
-            return np.arange(start, stop+1e-5*step, step)
+            points = np.arange(start, stop+1e-5*step, step)
+    if np.all(points == np.floor(points)):
+        points = np.asarray(points, 'int')
+    return points
 
 def _n_steps(traj, start, stop, n, logsteps):
     if n == 0: 
@@ -240,9 +262,12 @@ def _n_steps(traj, start, stop, n, logsteps):
     if logsteps and (start<=0 or stop<=0):
         raise ValueError("log range must be positive for "+str(traj))
     if logsteps:
-        return np.logspace(np.log10(start), np.log10(stop), n)
+        points = np.logspace(np.log10(start), np.log10(stop), n)
     else:
-        return np.linspace(start, stop, n)
+        points = np.linspace(start, stop, n)
+    if np.all(points == np.floor(points)):
+        points = np.asarray(points, 'int')
+    return points
 
 def _range(traj, context, loop_vars, logsteps):
     """
