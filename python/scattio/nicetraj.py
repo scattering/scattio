@@ -662,6 +662,12 @@ def test_ranges():
     _test_lin(dict(center=5.5, step=1, n=4), [4,5,6,7])
     _test_lin(dict(center=5, step=1, n=5), [3,4,5,6,7])
 
+    # Bare n
+    _test_lin(dict(n=5), [0,1,2,3,4])
+    _test_log(dict(n=3), [1,10,100])
+    _test_lin(5, [0,1,2,3,4])
+    _test_log(3, [1,10,100])
+
 
 
 if __name__ == "__main__":
