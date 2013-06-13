@@ -432,8 +432,11 @@ def _csv_field(v):
         return '%d'%v
     elif isinstance(v,float):
         return '%g'%v
+    elif hasattr(v, 'items'):
+        return "{"+", ".join("%s:%s"%(ki,_csv_field(vi)) for ki,vi in v.items())+"}"
     else:
         return '"%s"'%str(v)
+
 def print_csv(points):
     """
     Print a set of points to a CSV table.
@@ -445,13 +448,22 @@ def print_csv(points):
     for line in zip(*values):
         print ",".join(_csv_field(v) for v in line)
 
+def _header(name, width):
+    n = len(name)
+    if width > n+6:
+        extra = width - (n+2)
+        return " ".join(( "_"*(extra//2), name, "_"*((extra+1)//2) ))
+    else:
+        extra = width - n
+        return "".join(( " "*(extra//2), name, " "*((extra+1)//2) ))
+
 def print_table(points, constants):
     columns = columnate(points, constants)
     keys, values = zip(*sorted(columns.items()))
     hw = [len(k) for k in keys]
     vw = [max(len(_csv_field(ri)) for ri in c) for c in values]
     w = [max(pair) for pair in zip(hw,vw)]
-    print " ".join("%*s"%(wi,ki) for wi,ki in zip(w,keys))
+    print " ".join(_header(ki,wi) for wi,ki in zip(w,keys))
     for line in zip(*values):
         print " ".join("%*s"%(wi,_csv_field(ci)) for wi,ci in zip (w,line))
 
