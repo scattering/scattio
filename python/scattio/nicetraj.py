@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import division
 
 import os
 import math
@@ -129,7 +130,9 @@ def _one_loop(traj, context):
     for var,value in traj["vary"].items():
         if hasattr(value, 'items'):
             if "range" in value:
-                loop_vars.append((var, _range(value["range"], context, loop_vars)))
+                loop_vars.append((var, _range(value["range"], context, loop_vars, logsteps=False)))
+            elif "logrange" in value:
+                loop_vars.append((var, _range(value["logrange"], context, loop_vars, logsteps=True)))
             elif "list" in value:
                 loop_vars.append((var, _list(value["list"], context, loop_vars)))
         elif isinstance(value, list):
@@ -189,7 +192,59 @@ def _cycle_context(context, loop_vars):
         ctx.update(zip(names,vi))
         yield ctx
 
-def _range(traj, context, loop_vars):
+def _logrange(start, stop, step):
+    if start < stop and step > 1:
+        L = []
+        while start <= stop*1.0000001:
+            L.append(start)
+            start *= step
+        return np.array(L)
+    elif start > stop and step < 1:
+        L = []
+        while start >= stop*0.9999999:
+            L.append(start)
+            start *= step
+        return np.array(L)
+    else:
+        return np.array([], dtype='double')
+
+def _delta_steps(traj, start, stop, step, logsteps, reverse=False):
+    step = abs(step)
+    if step == 0:
+       raise ValueError("step cannot be zero for "+str(traj))
+    if logsteps and start <= 0:
+        raise ValueError("log range must be positive for "+str(traj))
+    if logsteps and step == 1:
+        raise ValueError("log range must have step different from 1 for "+str(traj))
+    if logsteps and step < 1:
+        step = 1./step
+    #print "delta",start,stop,step,reverse
+    if reverse:
+        if logsteps:
+            if start > stop: step = 1/step
+            return _logrange(stop, start, 1/step)[::-1]
+        else:
+            if start > stop:  step = -step
+            return np.arange(stop, start-1e-5*step, -step)[::-1]
+    else:
+        if logsteps:
+            if start > stop: step = 1/step
+            return _logrange(start, stop, step)
+        else:
+            if start > stop:  step = -step
+            return np.arange(start, stop+1e-5*step, step)
+
+def _n_steps(traj, start, stop, n, logsteps):
+    if n == 0: 
+        raise ValueError("unknown range length for "+str(traj))
+    if logsteps and (start<=0 or stop<=0):
+        raise ValueError("log range must be positive for "+str(traj))
+    if logsteps:
+        return np.logspace(np.log10(start), np.log10(stop), n)
+    else:
+        return np.linspace(start, stop, n)
+
+def _range(traj, context, loop_vars, logsteps):
     """
     Process the range directive in loop:vary.
 
@@ -198,10 +253,8 @@ def _range(traj, context, loop_vars):
     loop_len = len(loop_vars[0][1]) if len(loop_vars)>0 else 0
 
     if isinstance(traj, int):
-        # range: n -> [0, 1, ..., n-1]
-        points = np.arange(traj)
-        #points = np.arange(traj+1)
-
+        n = traj
+        start = step = stop = center = width = None
     else:
         #print "_range"
         #print "traj",traj
@@ -217,68 +270,68 @@ def _range(traj, context, loop_vars):
         if trajcopy:
             raise ValueError("unknown keys in range "+str(trajcopy))
 
-        bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None) + 32*(width is not None)
-        n_or_len = n if n is not None else loop_len
 
-        # There are twenty ways to pick three of start, step, stop, n, center, width
-        # TODO: what about step < 0?
-        if bits == 1+2+4: # start - stop - step
-            points = np.arange(start,stop+1e-5*step,step)
-        elif bits in (1+2+8,1+2): # start - stop - n
-            points = np.linspace(start,stop,n_or_len)
+    bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None) + 32*(width is not None)
+    n_or_len = n if n is not None else loop_len
+    #print "bits",bits
 
-        elif bits == (1+16+4): # start - center - step
-            points = np.arange(start,2*center-start+1e-5*step,step)
-        elif bits in (1+16+8,1+16): # start - center - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(start,2*center-start,n_or_len)
-        elif bits == 1+32+4: # start - width - step
-            points = np.arange(start,start+width+1e-5*step,step)
-        elif bits in (1+32+8,1+32): # start - width - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(start,start+width,n_or_len)
+    # There are twenty ways to pick three of start, step, stop, n, center, width
+    # Convert these to start, stop, step/n, reverse
+    reverse = False
+    if bits in (1+2, 1+2+4, 1+2+8): # start - stop - step/n
+        pass # start, stop, step unchanged
 
-        elif bits == (2+16+4): # stop - center - step
-            points = np.arange(stop,2*center-stop-1e-5*step,-step)[::-1]
-        elif bits in (2+16+8,2+16): # stop - center - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(2*center-stop,stop,n_or_len)
-        elif bits == (2+32+4): # stop - width - step
-            points = np.arange(stop,stop-width-1e-5*step,-step)[::-1]
-        elif bits in (2+32+8,2+32): # stop - width - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(stop-width,stop,n_or_len)
+    elif bits in (1+16, 1+16+4, 1+16+8): # start - center - step/n
+        stop = 2*center - start
+    elif bits in (1+32, 1+32+4, 1+32+8): # start - width - step/n
+        stop = start + width
 
-        elif bits == (16+32+4): # center - width - step
-            points = np.arange(center-width/2, center+width/2+1e-5*step, step)
-        elif bits in (16+32+8,16+32): # center - width - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(center-width/2,center+width/2,n_or_len)
+    elif bits in (2+16, 2+16+4, 2+16+8): # stop - center - step/n
+        start = 2*center - stop
+        reverse = True
+    elif bits in (2+32, 2+32+4, 2+32+8): # stop - width - step/n
+        start = stop - width
+        reverse = True
 
-        elif bits in (1+4+8,1+4): # start - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(start,start+(n_or_len-1)*step,n_or_len)
-        elif bits in (2+4+8,2+4): # stop - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(stop-(n_or_len-1)*step,stop,n_or_len)
-        elif bits in (16+4+8,16+4): # center - step - n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            points = np.linspace(center-(n_or_len-1)*step/2.0, center+(n_or_len-1)*step/2.0, n_or_len)
+    elif bits in (16+32, 16+32+4, 16+32+8): # center - width - step/n
+        start,stop = center - width/2., center + width/2.
 
-        # width - step - n:  no anchor at start, stop or center
-        # start - stop - width: no step size or number of steps
-        # start - stop - center:  no step size or number of steps
-        # start - center - width: no step size or number of steps
-        # stop - center - width: no step size or number of steps
+    elif bits in (1+4, 1+4+8): # start - step - n
+        stop = start + (n_or_len-1)*abs(step)
+        step = None # use linspace rather than arange
 
-        elif bits in (8,0):  # n by itself means 0, 1, ..., n
-            if n_or_len == 0: raise ValueError("unknown range length for "+str(traj))
-            #points = np.arange(n+1 if n else loop_len)
-            points = np.arange(n_or_len)
+    elif bits in (2+4, 2+4+8): # stop - step - n
+        start = stop - (n_or_len-1)*abs(step)
+        step = None # use linspace rather than arange
+
+    elif bits in (16+4, 16+4+8): # center - step - n
+        start, stop = center - (n_or_len-1)*abs(step)/2., center + (n_or_len-1)*abs(step)/2.
+        step = None # use linspace rather than arange
+
+    # width - step - n:  no anchor at start, stop or center
+    # start - stop - width: no step size or number of steps
+    # start - stop - center:  no step size or number of steps
+    # start - center - width: no step size or number of steps
+    # stop - center - width: no step size or number of steps
+
+    elif bits in (8,0):  # n by itself means 0, 1, ..., n-1
+        if logsteps:
+            start, stop = 1, 10**(n_or_len-1)
         else:
-            raise ValueError("invalid parameter combination in range "+str(traj))
+            start, stop = 0, n_or_len-1
+
+    else:
+        raise ValueError("invalid parameter combination in range "+str(traj))
+
+    
+    #print start, stop, step, n_or_len, logsteps, reverse
+    if step is not None:
+        points = _delta_steps(traj, start, stop, step, logsteps, reverse)
+    else:
+        points = _n_steps(traj, start, stop, n_or_len, logsteps)
 
     if loop_len and len(points) != loop_len:
+        print "wrong number",points, traj
         raise ValueError("range different from number of points in loop for "+str(traj))
     return points
 
@@ -523,5 +576,69 @@ def main():
     elif sys.argv[1] == "sans": demo(parse(SANS_EXAMPLE), "sans.trj")
     else: demo(load(sys.argv[1]), sys.argv[1])
 
+def test_ranges():
+    context = {}
+    def _test_lin(r, expected):
+       loop_vars = [('i',expected)]
+       points = _range(r, context, loop_vars, False) 
+       #print r, points, expected
+       if np.linalg.norm(points - expected) > 1.e-10:
+           print r, points, expected
+    def _test_log(r, expected):
+       loop_vars = [('i',expected)]
+       points = _range(r, context, loop_vars, True) 
+       if np.linalg.norm(points - expected) > 1.e-10:
+           print r, points, expected
+
+    # check negative step
+    _test_lin(dict(start=1,stop=5.5,step=-1),[1,2,3,4,5])
+
+    # start - stop - n/step
+    _test_lin(dict(start=1,stop=5.5,step=1),[1,2,3,4,5])
+    _test_lin(dict(start=5,stop=1.5,step=1),[5,4,3,2])
+    _test_lin(dict(start=1,stop=5,n=5),[1,2,3,4,5])
+    _test_lin(dict(start=5,stop=2,n=4),[5,4,3,2])
+
+    _test_log(dict(start=1,stop=1001,step=10),[1,10,100,1000])
+    _test_log(dict(start=1000,stop=0.8,step=10),[1000,100,10,1])
+    _test_log(dict(start=1,stop=1000,n=4),[1,10,100,1000])
+    _test_log(dict(start=1000,stop=1,n=4),[1000,100,10,1])
+
+    # start - center/width - n/step
+    _test_lin(dict(start=5,center=7.1,step=1),[5,6,7,8,9])
+    _test_lin(dict(start=5,width=4.1,step=1),[5,6,7,8,9])
+    _test_lin(dict(start=5,center=7,n=5),[5,6,7,8,9])
+    _test_lin(dict(start=5,width=4,n=5),[5,6,7,8,9])
+    _test_lin(dict(start=5,center=2.9,step=1),[5,4,3,2,1])
+    _test_lin(dict(start=5,width=-4.1,step=1),[5,4,3,2,1])
+    _test_lin(dict(start=5,center=3,n=5),[5,4,3,2,1])
+    _test_lin(dict(start=5,width=-4,n=5),[5,4,3,2,1])
+
+    # stop - center/width - n/step
+    _test_lin(dict(stop=5,center=7.1,step=1),[9,8,7,6,5])
+    _test_lin(dict(stop=5,width=4.1,step=1),[1,2,3,4,5])
+    _test_lin(dict(stop=5,center=7,n=5),[9,8,7,6,5])
+    _test_lin(dict(stop=5,width=4,n=5),[1,2,3,4,5])
+    _test_lin(dict(stop=5,center=2.9,step=1),[1,2,3,4,5])
+    _test_lin(dict(stop=5,width=-4.1,step=1),[9,8,7,6,5])
+    _test_lin(dict(stop=5,center=3,n=5),[1,2,3,4,5])
+    _test_lin(dict(stop=5,width=-4,n=5),[9,8,7,6,5])
+
+
+    # center - width - n/step
+    _test_lin(dict(center=5,width=4,step=1),[3,4,5,6,7])
+    _test_lin(dict(center=5.5,width=5,step=1),[3,4,5,6,7,8])
+    _test_lin(dict(center=5,width=4,n=5),[3,4,5,6,7])
+    _test_lin(dict(center=5.5,width=5,n=6),[3,4,5,6,7,8])
+
+    # start/stop/center - step - n
+    _test_lin(dict(start=5, step=1, n=4), [5,6,7,8])
+    _test_lin(dict(stop=5, step=1, n=4), [2,3,4,5])
+    _test_lin(dict(center=5.5, step=1, n=4), [4,5,6,7])
+    _test_lin(dict(center=5, step=1, n=5), [3,4,5,6,7])
+
+
+
 if __name__ == "__main__":
+    #test_ranges()
     main()
