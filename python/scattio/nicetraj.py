@@ -73,7 +73,12 @@ def dryrun(traj, filename="traj.trj"):
         '_groups': set()
     })
 
-    constants = context.copy()
+    traj = traj.copy()
+    # process init
+    _init(traj.pop('init',{}), context)
+
+    # remove loops and process the remaining top level keywords
+    loops = traj.pop('loops',[])
     for k,v in traj.items():
         if str(k) in ("fileGroup", "fileName", "entryName", "filePrefix"):
             # delayed evaluation of filename handlers
@@ -81,26 +86,26 @@ def dryrun(traj, filename="traj.trj"):
         elif str(k) in ("trajName", "descr", "neverWrite", "alwaysWrite"):
             # keywords evaluated in the current context
             context[k] = _eval(v, context)
-        elif str(k) == "init":
-            _init(v, context)
-            constants = context.copy()
-        elif str(k) == "loops":
-            # Set volatiles here so they don't end up in constants.  The
-            # variables in constants are not recorded in the dryrun table.
+        else:
+            raise ValueError("unknown keyword %r"%k)
 
-            # Pretend initial state of file counters
-            context.update({
-                'fileNum': 42,
+    # process loops last
+    constants = context.copy()
+
+    # Pretend initial state of file counters.  Define them after constants
+    # so that they will show up as columns in the dry run table.  In a
+    # real trajectory, these would be set by the server
+    context.update({
+               'fileNum': 42,
                 'instFileNum': 142,
                 'expPointNum': 1042,
             })
 
-            # Point number is set to zero at the start of each trajectory
-            context['pointNum'] = 0
+    # Point number is set to zero at the start of each trajectory
+    context['pointNum'] = 0
 
-            points.extend(_loop(v,context))
-        else:
-            raise ValueError("unknown keyword %r"%k)
+    # run the loops
+    points.extend(_loops(loops,context))
 
     return points, constants
 
@@ -133,7 +138,7 @@ def _eval(expr, context):
     else:
         return expr
 
-def _loop(traj, context):
+def _loops(traj, context):
     """
     Process the loops construct.
     """
@@ -144,6 +149,10 @@ def _one_loop(traj, context):
     """
     Process one of a series of loops in a loops construct.
     """
+    extra_keys = set(traj.keys()) - set(('vary','loops'))
+    if extra_keys:
+        raise ValueError("loop contains extra keys %s"%", ".join(sorted(extra_keys)))
+
     loop_vars = []
     loop_len = 1
     for var,value in traj["vary"].items():
@@ -170,7 +179,7 @@ def _one_loop(traj, context):
             loop_vars.append((var, points))
     for ctx in _cycle_context(context, loop_vars):
         if "loops" in traj:
-            for pt in _loop(traj["loops"],ctx): 
+            for pt in _loops(traj["loops"],ctx): 
                 yield pt
                 _update_global_context(context,ctx)
         else:
@@ -469,10 +478,14 @@ def print_table(points, constants):
 
 POLSPEC_EXAMPLE = """
 {
-        "neverWrite": ["i"],
+        "neverWrite": ["i","up","down","POLXS"],
         "alwaysWrite": ["t1"],
-        "entryName": "['A','B','C','D'][polarizationIn+2*polarizationOut]",
+        // Polarization cross section is a 2 bit integer index into
+        // the POLXS array, with one bit for the polarization in and
+        // the other for the polarization out. 00: A, 01: B, 10: C, 11: D
+        "entryName": "POLXS[polarizationIn + 2*polarizationOut]",
         "init": {
+                "POLXS": ["A", "B", "C", "D"],
                 "down": 0,
                 "up": 1,
                 "counter": {
