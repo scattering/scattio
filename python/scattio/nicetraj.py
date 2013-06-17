@@ -3,6 +3,7 @@ from __future__ import division
 
 import os
 import math
+from copy import copy
 
 import numpy as np
 import math
@@ -112,6 +113,7 @@ def dryrun(traj, filename="traj.trj"):
 class JSObject(object):
     def __repr__(self): return repr(self.__dict__)
     def __getitem__(self, k): return self.__dict__[k]
+    def __setitem__(self, k, v): self.__dict__[k] = v
 
 def _init(traj, context):
     for k,v in traj.items():
@@ -120,6 +122,11 @@ def _init(traj, context):
             context[k] = obj
             for field_name, field_value in v.items():
                 setattr(obj,field_name, _eval(field_value, context))
+        elif '.' in k:
+            deviceID, nodeID = k.split('.',2)
+            if deviceID not in context or not isinstance(context[deviceID], JSObject):
+                context[deviceID] = JSObject()
+            context[deviceID][nodeID] = _eval(v, context)
         else:
             context[k] = _eval(v, context)
 
@@ -215,9 +222,19 @@ def _cycle_context(context, loop_vars):
     Yield a series of contexts with values for prior looping parameters.
     """
     names, values = zip(*loop_vars)
-    for vi in zip(*values):
+    dotted = set(n for n in names if '.' in n)
+    devices = set(n.split('.')[0] for n in dotted)
+    ids = dict((n,n.split('.')) for  n in dotted)
+    for value_set in zip(*values):
         ctx = context.copy()
-        ctx.update(zip(names,vi))
+        for n in devices: 
+            ctx[n] = copy(ctx[n]) if n in ctx else JSObject()
+        for n,v in zip(names,value_set):
+            if n in dotted:
+                deviceID, nodeID = ids[n]
+                ctx[deviceID][nodeID] = v
+            else:
+                ctx[n] = v
         yield ctx
 
 def _logrange(start, stop, step):
@@ -497,11 +514,11 @@ POLSPEC_EXAMPLE = """
         },
         "loops": [{
                 "vary": {
-                        "detectorAngle": {
+                        "detectorAngle.softPosition": {
                                 "range": {
                                         "start": 0,"stop": 4,"step": 0.02}
                         },
-                        "sampleAngle": "detectorAngle/2.0",
+                        "sampleAngle": "detectorAngle.softPosition/2.0",
                         "slit1Aperture": [1,2,3,4,5],
                         "slit2Aperture": {
                                 "list": {
