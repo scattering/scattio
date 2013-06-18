@@ -15,6 +15,12 @@ import re
 import json
 from contextlib import contextmanager
 
+try:
+    from collections import OrderedDict
+except:
+    from ordered_dict import OrderedDict
+
+
 _LEADING_TEXT = re.compile(r'^.*?[{]', re.DOTALL)
 _LINE_CONTINUATION = re.compile(r'\\\s*\n')
 _TRAILING_COMMENT = re.compile(r'(?P<comment>\s*//.*?)\n')
@@ -29,6 +35,8 @@ def relaxed_loads(text, **kw):
     """
     Parse and return a relaxed JSON string.
     """
+    ordered = kw.pop('ordered', False)
+    if ordered:  kw['object_pairs_hook'] = OrderedDict
     # TODO: need a little state machine that performs the translation so that
     # TODO: line and column numbers are preserved, and so that we can have
     # TODO: http:// in a string (instead of it being treated like a comment). 
@@ -59,7 +67,6 @@ def relaxed_loads(text, **kw):
         msg = "\n".join(msg)
         raise e.__class__(msg)
     return obj
-
 
 @contextmanager
 def float_format(formatstr='.15g'):

@@ -1,13 +1,21 @@
 """
 NeXus file interface.
+
+Note that this changes h5py to include a natural naming interface with
+g.Fname referencing field *name* in Group *g*, and g.Aname referencing
+attribute *name* in the Group or Dataset *g*.  It also adds the tree()
+method to groups, which returns a formatted summary tree.
 """
 __all__ = ["open", "group", "field", "append", "extend", "link",
-           "walk", "datasets", "summary"]
+           "walk", "datasets"]
+import new
 import os
 
 from nice.lib.platform_h5py import h5py as h5
 import numpy
 
+# The following forces natural naming onto 
+from . import h5natural
 from . import iso8601
 
 # Conforms to the following version of the NeXus standard
@@ -533,36 +541,24 @@ def _simple_copy(source,target,exact=False):
             for k,v in obj.attrs.iteritems():
                 t.attrs[k] = v
 
-def summarystr(group, indent=0, attrs=True, recursive=True):
+def tree(self, depth=1, attrs=True, indent=0):
     """
     Return the structure of the HDF 5 tree as a string.
 
     *group* is the starting group.
 
-    *indent* is the indent for each line.
+    *depth* is the number of levels to descend (default=2), or inf for full tree
 
     *attrs* is False if attributes should be hidden
 
-    *recursive* is False to show only the current level of the tree.
-    """
-    return "\n".join(_tree_format(group, indent, attrs, recursive))
-
-def summary(group, indent=0, attrs=True, recursive=True):
-    """
-    Print the structure of an HDF5 tree.
-
-    *group* is the starting group.
-
     *indent* is the indent for each line.
-
-    *attrs* is False if attributes should be hidden
-
-    *recursive* is False to show only the current level of the tree.
     """
-    for s in _tree_format(group, indent, attrs, recursive):
-        print s
+    return "\n".join(_tree_format(group, indent, attrs, depth))
+# Add Tree attribute to h5py Group
+h5.Group.tree = new.instancemethod(tree, None, h5.Group)
 
-def _tree_format(node, indent, attrs, recursive):
+
+def _tree_format(node, indent, attrs, depth):
     """
     Return an iterator for the lines in a formatted HDF5 tree.
 
@@ -614,7 +610,9 @@ def _tree_format(node, indent, attrs, recursive):
         # Format string or numeric value
         size = numpy.prod(field.shape)
         if str(field.dtype).startswith("|S"):
-            if ndim == 0:
+            if size == 0:
+                value = '['*ndim + ']'*ndim
+            elif ndim == 0:
                 value = _limited_str(field.value)
             elif ndim == 1:
                 if size == 1:
@@ -625,7 +623,9 @@ def _tree_format(node, indent, attrs, recursive):
             else:
                 value = '[[...]]'
         else:
-            if ndim == 0:
+            if size == 0:
+                value = '['*ndim + ']'*ndim
+            elif ndim == 0:
                 value = "%g"%field.value
             elif ndim == 1:
                 if size == 0:
@@ -650,9 +650,9 @@ def _tree_format(node, indent, attrs, recursive):
 
     # Yield groups.
     # If recursive, show group details, otherwise just show name.
-    if recursive:
+    if depth>0:
         for g in groups:
-            for s in _tree_format(g, indent, attrs, recursive):
+            for s in _tree_format(g, indent, attrs, depth-1):
                 yield s
     else:
         for g in groups:
@@ -774,7 +774,7 @@ def main():
         for fname in files:
             h = open(fname, "r")
             print "===",fname,"==="
-            summary(h["/"], attrs=attrs)
+            print h.tree(attrs=attrs,depth=inf)
             h.close()
     else:
         print "usage: python -m nice.stream.nexus [-a] files"
