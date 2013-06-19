@@ -116,7 +116,7 @@ class JSObject(object):
     def __setitem__(self, k, v): self.__dict__[k] = v
 
 def _init(traj, context):
-    for k,v in traj.items():
+    for k,v in traj:
         if hasattr(v,'items'):
             obj = JSObject()
             context[k] = obj
@@ -162,7 +162,7 @@ def _one_loop(traj, context):
 
     loop_vars = []
     loop_len = 1
-    for var,value in traj["vary"].items():
+    for var,value in traj["vary"]:
         if hasattr(value, 'items'):
             if "range" in value:
                 loop_vars.append((var, _range(value["range"], context, loop_vars, logsteps=False)))
@@ -501,43 +501,43 @@ POLSPEC_EXAMPLE = """
         // the POLXS array, with one bit for the polarization in and
         // the other for the polarization out. 00: A, 01: B, 10: C, 11: D
         "entryName": "POLXS[polarizationIn + 2*polarizationOut]",
-        "init": {
-                "POLXS": ["A", "B", "C", "D"],
-                "down": 0,
-                "up": 1,
-                "counter": {
+        "init": [
+                ["POLXS", ["A", "B", "C", "D"]],
+                ["down", 0],
+                ["up", 1],
+                ["counter", {
                         "countAgainst": "'MONITOR'",
                         "monitorPreset": 30000
-                },
-                "vertSlitAperture1": 0.2,
-                "vertSlitAperture2": 0.2
-        },
+                }],
+                ["vertSlitAperture1", 0.2],
+                ["vertSlitAperture2", 0.2]
+        ],
         "loops": [{
-                "vary": {
-                        "detectorAngle.softPosition": {
+                "vary": [
+                        ["detectorAngle.softPosition", {
                                 "range": {
                                         "start": 0,"stop": 4,"step": 0.02}
-                        },
-                        "sampleAngle": "detectorAngle.softPosition/2.0",
-                        "slit1Aperture": [1,2,3,4,5],
-                        "slit2Aperture": {
+                        }],
+                        ["sampleAngle", "detectorAngle.softPosition/2.0"],
+                        ["slit1Aperture", [1,2,3,4,5]],
+                        ["slit2Aperture", {
                                 "list": {
                                         "value": [1,2,3,1],
                                         "cyclic": true
                                 }
-                        }
-                },
+                        }]
+                ],
                 "loops": [{
-                        "vary": {
-                                "i": {"range": 12},
-                                "t0": "i*12+200",
-                                "skip": "(t0==248)"
-                        },
+                        "vary": [
+                                ["i", {"range": 12}],
+                                ["t0", "i*12+200"],
+                                ["skip", "(t0==248)"]
+                        ],
                         "loops": [{
-                                "vary": {
-                                        "polarizationIn": ["down","up","down","up"],
-                                        "polarizationOut": ["down","down","up","up"]
-                                }
+                                "vary": [
+                                        ["polarizationIn", ["down","up","down","up"]],
+                                        ["polarizationOut", ["down","down","up","up"]]
+                                ]
                         }]
                 }]
         }]
@@ -548,17 +548,17 @@ SANS_EXAMPLE = """
 {
   fileGroup: "pointNum",
 
-  init: {
+  init: [
 
-    "counter.countAgainst": "'TIME'",
-    sample: {
+    ["counter.countAgainst", "'TIME'"],
+    ["sample", {
       mode: "'Chamber'",
       aperture: 12.7,
       sampleThickness: 1
-    },
+    }],
 
 
-    CONFIGS: { // helper map
+    ["CONFIGS", { // helper map
 
       "1.5m6": { attenuator: 0, wavelength: 6, wavelengthSpread: 0.132, nguide: 2, guide:{aperture: 50.8}, beamstop: 4, beamStopX: 0.5, beamStopY: -0.3, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 150, detectorOffset: 25 },
       "1.5m6t": { attenuator: 9, wavelength: 6, wavelengthSpread: 0.132, nguide: 2, guide:{aperture: 50.8}, beamstop: 4, beamStopX: -15, beamStopY: -0.3, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 150, detectorOffset: 25 },
@@ -566,11 +566,11 @@ SANS_EXAMPLE = """
       "5m6t": { attenuator: 6, wavelength: 6, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: -15, beamStopY: -0.4, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 },
       "5m20": { attenuator: 0, wavelength: 20, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: 0.2, beamStopY: -0.1, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 },
       "5m20t": { attenuator: 1, wavelength: 20, wavelengthSpread: 0.132, nguide: 0, guide:{aperture: 13.0}, beamstop: 2, beamStopX: 0.2, beamStopY: -0.1, beamStop: {beamCenterX: 64, beamCenterY: 64}, detectorPosition: 525, detectorOffset: 0 }
-    },
+    }],
 
-    SAMPLE_NAMES: ["empty cell", "blocked beam", "sample1", "sample2", "sample3", "sample4", "sample5", "sample6", "sample7", "sample8"],
+    ["SAMPLE_NAMES", ["empty cell", "blocked beam", "sample1", "sample2", "sample3", "sample4", "sample5", "sample6", "sample7", "sample8"]],
 
-    COUNT_TIMES: {
+    ["COUNT_TIMES", {
       "empty cell":     {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
       "blocked beam": {"1.5m6":300, "5m6":900, "5m6t":0, "5m20":1800, "5m20t":0},
       sample1:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
@@ -581,11 +581,11 @@ SANS_EXAMPLE = """
       sample6:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
       sample7:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180},
       sample8:  {"1.5m6":300, "5m6":900, "5m6t":180, "5m20":1800, "5m20t":180}
-    },
+    }],
 
-    CONFIGURATION_ORDER: ["1.5m6", "5m6", "5m6t", "5m20t", "5m20"],
+    ["CONFIGURATION_ORDER", ["1.5m6", "5m6", "5m6t", "5m20t", "5m20"]],
 
-    SAMPLE_INTENTS: {
+    ["SAMPLE_INTENTS", {
       "empty cell": "'EmptyCell'",
       "blocked beam": "'BlockedBeam'",
       sample1: "'sample'",
@@ -596,30 +596,31 @@ SANS_EXAMPLE = """
       sample6: "'sample'",
       sample7: "'sample'",
       sample8: "'sample'"
-    }
-  },
+    }]
+  ],
   loops: [{ // temp loop
-    vary: { T: {range: 6},
-      sampleTemperature: "15.0 + T*5.0"
-    },
+    vary: [ 
+      ["T", {range: 6}],
+      ["sampleTemperature", "15.0 + T*5.0"]
+    ],
     loops: [{ // config loop
-      vary: {
-        CTR: {range: 5},
+      vary: [
+        ["CTR", {range: 5}],
         // this will work if a mapping device called
         // "deviceConfig"
         // is in the device model
-        deviceConfig: "CONFIGS[CONFIGURATION_ORDER[CTR]]"
-      },
+        ["deviceConfig", "CONFIGS[CONFIGURATION_ORDER[CTR]]"]
+      ],
       loops: [{ // sample loop
-        vary: {
-          S: {range: 10},
-          SNAME: "SAMPLE_NAMES[S]",
-          sample: {index: "S" },
-          INTENT: "SAMPLE_INTENTS[SNAME]",
-          COUNTER_VALUE : "COUNT_TIMES[SNAME][CONFIGURATION_ORDER[CTR]]",
-          counter: {timePreset: "COUNTER_VALUE"},
-          skip : "COUNTER_VALUE == 0" // skip the point
-        },
+        vary: [
+          ["S", {range: 10}],
+          ["SNAME", "SAMPLE_NAMES[S]"],
+          ["sample", {index: "S" }],
+          ["INTENT", "SAMPLE_INTENTS[SNAME]"],
+          ["COUNTER_VALUE",  "COUNT_TIMES[SNAME][CONFIGURATION_ORDER[CTR]]"],
+          ["counter", {timePreset: "COUNTER_VALUE"}],
+          ["skip", "COUNTER_VALUE == 0"] // skip the point
+        ],
       }] // end of sample loop
     }]// end of guideConfigs loop
   }]// end of temperature loop
