@@ -15,10 +15,13 @@ import demjson
 try:
     raise ImportError("suppress PyV8")
     import PyV8
-    class JSObject(object):
-        def __repr__(self): return repr(self.__dict__)
-        def __getitem__(self, k): return self.__dict__[k]
-        def __setitem__(self, k, v): self.__dict__[k] = v
+    
+    JSObject = dict
+    
+    class Global(PyV8.JSClass):
+        def sprintf(self, pattern, *args):
+            return pattern % args
+    
     class Context(PyV8.JSContext):
         def __getitem__(self, *args, **kw):
             return self.locals.__getitem__(*args, **kw)
@@ -30,14 +33,14 @@ try:
             return self.locals.__delitem__(*args, **kw)
             
         def __init__(self, **kw):
-            super(PyV8.JSContext,self).__init__()
+            super(PyV8.JSContext,self).__init__(Global())
             self.enter()
             for k,v in kw.items(): self.locals[k] = v
             mathfn = ('abs','acos','asin','atan','atan2','ceil','cos','exp','floor','log',
                   'max','min','pow','random','round','sin','sqrt','tan')
             self.rhs("var "+",".join("%s=Math.%s"%(fn,fn) for fn in mathfn))
             self.rhs("var pi=Math.PI")
-            add_sprintfJS(self)
+            #add_sprintfJS(self)
 
         def get(self, name, default):
             return self.locals[name] if name in self.locals else default
@@ -85,6 +88,8 @@ except ImportError:
         def __repr__(self): return repr(self.__dict__)
         def __getitem__(self, k): return self.__dict__[k]
         def __setitem__(self, k, v): self.__dict__[k] = v
+        def items(self):
+            return self.__dict__.items()
 
     class Context(object):
         def __init__(self, **kw):
@@ -249,7 +254,8 @@ def _init(traj, context):
             value = JSObject()
             for field_name, field_value in v.items():
                 #print "evaluating",field_name,v
-                setattr(value,field_name, context.rhs(field_value))
+                value[field_name] = context.rhs(field_value)
+                #setattr(value,field_name, context.rhs(field_value))
         else:
             #print "evaluating",v
             value = context.rhs(v)
@@ -518,7 +524,7 @@ def columnate(points, constants):
         ptkeys = set()
         for field,value in pt.items():
             if isinstance(value, JSObject):
-                for subfield,subvalue in value.__dict__.items():
+                for subfield,subvalue in value.items():
                     name = ".".join((field,subfield))
                     ptkeys.add(name)
                     if name in columns:
