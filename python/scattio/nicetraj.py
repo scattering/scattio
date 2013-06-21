@@ -3,6 +3,7 @@ from __future__ import division
 
 import os
 import math
+import random
 import itertools
 
 import numpy as np
@@ -12,16 +13,87 @@ import demjson
 #from demjson import OrderedDict
 
 try:
+    raise ImportError("suppress PyV8")
     import PyV8
-    Context = PyV8Context
-except:
+    class JSObject(object):
+        def __repr__(self): return repr(self.__dict__)
+        def __getitem__(self, k): return self.__dict__[k]
+        def __setitem__(self, k, v): self.__dict__[k] = v
+    class Context(PyV8.JSContext):
+        def __getitem__(self, *args, **kw):
+            return self.locals.__getitem__(*args, **kw)
+        
+        def __setitem__(self, *args, **kw):
+            return self.locals.__setitem__(*args, **kw)
+
+        def __delitem__(self, *args, **kw):
+            return self.locals.__delitem__(*args, **kw)
+            
+        def __init__(self, **kw):
+            super(PyV8.JSContext,self).__init__()
+            self.enter()
+            for k,v in kw.items(): self.locals[k] = v
+            mathfn = ('abs','acos','asin','atan','atan2','ceil','cos','exp','floor','log',
+                  'max','min','pow','random','round','sin','sqrt','tan')
+            self.rhs("var "+",".join("%s=Math.%s"%(fn,fn) for fn in mathfn))
+            self.rhs("var pi=Math.PI")
+            add_sprintfJS(self)
+
+        def get(self, name, default):
+            return self.locals[name] if name in self.locals else default
+            
+        def update(self, update_dict, **kw):
+            for k,v in update_dict.items(): self.locals[k] = v
+            for k,v in kw.items(): self.locals[k] = v
+                
+        def items(self):
+            return [(k,self.locals[k]) for k in self.locals.keys()]
+            
+        def state(self):
+            return dict((k,self.locals[k]) for k in self.locals.keys())
+            
+        def assign(self, name, value):
+            if '.' in name:
+                deviceID, nodeID = name.split('.',1)
+                obj = {}
+                existing = self.get(deviceID, None)
+                if isinstance(existing, dict): 
+                    obj.update(existing)
+                elif isinstance(existing, PyV8.JSObject):
+                    obj.update((k,existing[k]) for k in existing.keys())
+                obj[nodeID] = value
+                self[deviceID] = obj
+                #print "assigning",name,value,"as",deviceID,obj
+            else:
+                self[name] = value
+        def rhs(self, expr):
+            """
+            Evaluate an expression in a context.
+            """
+            if isinstance(expr, basestring):
+                #import pprint; pprint.pprint(self.__dict__)
+                #print "eval",expr
+                try:
+                    return self.eval(expr)
+                except Exception,exc:
+                    raise exc.__class__, str(exc) + " when evaluating " + expr
+            else:
+                return expr
+            
+except ImportError:
+    class JSObject(object):
+        def __repr__(self): return repr(self.__dict__)
+        def __getitem__(self, k): return self.__dict__[k]
+        def __setitem__(self, k, v): self.__dict__[k] = v
+
     class Context(object):
         def __init__(self, **kw):
             self.__dict__ = kw.copy()
             # Set the initial context to contain sprintf and math functions
             self.assign("sprintf", lambda pattern,*args: pattern%args)
             self.update((k,v) for k,v in math.__dict__.items()
-                        if not k.startswith('_')) 
+                        if not k.startswith('_'))
+            self['random'] = random.random
         def __setitem__(self, k, v): self.__dict__[k] = v
         def __getitem__(self, k): return self.__dict__[k]
         def get(self, *args): return self.__dict__.get(*args)
@@ -54,7 +126,7 @@ except:
                 #print "assigning",name,value,"as",deviceID,obj
             else:
                 self.__dict__[name] = value
-        def eval(self, expr):
+        def rhs(self, expr):
             """
             Evaluate an expression in a context.
             """
@@ -69,6 +141,13 @@ except:
             else:
                 return expr
 
+def add_sprintfJS(context):
+    with open(os.path.join(os.path.dirname(__file__),'sprintf.js')) as fid:
+        source = fid.read()
+    context.eval('exports={}')
+    context.eval(source)
+    context.eval('sprintf=exports.sprintf')
+    del context['exports']
 
 def load(filename):
     """
@@ -140,7 +219,7 @@ def dryrun(traj, filename="traj.trj"):
             context["_"+k] = v
         elif str(k) in ("trajName", "descr", "neverWrite", "alwaysWrite"):
             # keywords evaluated in the current context
-            context[k] = context.eval(v)
+            context[k] = context.rhs(v)
         else:
             raise ValueError("unknown keyword %r"%k)
 
@@ -164,19 +243,16 @@ def dryrun(traj, filename="traj.trj"):
 
     return points, constants
 
-class JSObject(object):
-    def __repr__(self): return repr(self.__dict__)
-    def __getitem__(self, k): return self.__dict__[k]
-    def __setitem__(self, k, v): self.__dict__[k] = v
-
 def _init(traj, context):
     for name,v in traj:
         if hasattr(v,'items'):
             value = JSObject()
             for field_name, field_value in v.items():
-                setattr(value,field_name, context.eval(field_value))
+                #print "evaluating",field_name,v
+                setattr(value,field_name, context.rhs(field_value))
         else:
-            value = context.eval(v)
+            #print "evaluating",v
+            value = context.rhs(v)
         context.assign(name, value)
 
 def _loops(traj, context):
@@ -232,15 +308,15 @@ def _next_point(context):
     context['expPointNum'] += 1
 
 def _set_file(context):
-    group  = context.eval(context['_fileGroup'])
+    group  = context.rhs(context['_fileGroup'])
     if group not in context['_groups']:
         context['_groups'].add(group)
         context['fileNum'] += 1
         context['instFileNum'] += 1
     context['fileGroup'] = group
-    context['filePrefix'] = context.eval(context['_filePrefix'])
-    context['fileName'] = context.eval(context['_fileName'])
-    context['entryName'] = context.eval(context['_entryName'])
+    context['filePrefix'] = context.rhs(context['_filePrefix'])
+    context['fileName'] = context.rhs(context['_fileName'])
+    context['entryName'] = context.rhs(context['_entryName'])
 
 def _cycle_context(context, loop_vars):
     """
@@ -336,12 +412,12 @@ def _range(traj, context, logsteps):
         #print "traj",traj
         #print "context",context
         trajcopy = traj.copy()
-        start = context.eval(trajcopy.pop("start",None))
-        step = context.eval(trajcopy.pop("step",None))
-        stop = context.eval(trajcopy.pop("stop",None))
-        n = context.eval(trajcopy.pop("n",None))
-        center = context.eval(trajcopy.pop("center",None))
-        width = context.eval(trajcopy.pop("width",None))
+        start = context.rhs(trajcopy.pop("start",None))
+        step = context.rhs(trajcopy.pop("step",None))
+        stop = context.rhs(trajcopy.pop("stop",None))
+        n = context.rhs(trajcopy.pop("n",None))
+        center = context.rhs(trajcopy.pop("center",None))
+        width = context.rhs(trajcopy.pop("width",None))
         if trajcopy:
             raise ValueError("unknown keys in range "+str(trajcopy))
 
@@ -424,11 +500,11 @@ def _list(traj, context, cycle=True):
         raise ValueError("list has no length "+str(traj))
 
     if not cycle:
-        return (context.eval(p) for  p in points)
+        return (context.rhs(p) for  p in points)
     elif cyclic:
-        return (context.eval(p) for p in itertools.cycle(points))
+        return (context.rhs(p) for p in itertools.cycle(points))
     else:
-        return (context.eval(p) for p in itertools.chain(iter(points),itertools.repeat(points[-1])))
+        return (context.rhs(p) for p in itertools.chain(iter(points),itertools.repeat(points[-1])))
 
 
 def columnate(points, constants):
