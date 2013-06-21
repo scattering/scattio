@@ -3,7 +3,6 @@ from __future__ import division
 
 import os
 import math
-from copy import copy, deepcopy
 import itertools
 
 import numpy as np
@@ -11,6 +10,64 @@ import math
 import jsonutil
 import demjson
 #from demjson import OrderedDict
+
+try:
+    import PyV8
+    Context = PyV8Context
+except:
+    class Context(object):
+        def __init__(self, **kw):
+            self.__dict__ = kw.copy()
+            # Set the initial context to contain sprintf and math functions
+            self.assign("sprintf", lambda pattern,*args: pattern%args)
+            self.update((k,v) for k,v in math.__dict__.items()
+                        if not k.startswith('_')) 
+        def __setitem__(self, k, v): self.__dict__[k] = v
+        def __getitem__(self, k): return self.__dict__[k]
+        def get(self, *args): return self.__dict__.get(*args)
+        def update(self, *args, **kw): return self.__dict__.update(*args, **kw)
+        def items(self): return self.__dict__.items()
+        def state(self): 
+            """
+            Returns the current state of the context as a set of key-value pairs.
+
+            Note that any variables which are references within the current state
+            are not copied, and so may change as new expressions are evaluated
+            within the context.
+            """
+            return self.__dict__.copy()
+        def assign(self, name, value):
+            """
+            Assign a value to a name in the context.  If name is dotted, then assign 
+            to a field of an object, copying the existing object beforehand or creating 
+            a new one if it does not already exist.  The copy-on-write semantics
+            allows us to more easily copy the existing context for later return.
+            """
+            if '.' in name:
+                deviceID, nodeID = name.split('.',1)
+                obj = JSObject()
+                existing = self.get(deviceID, None)
+                if isinstance(existing, JSObject): 
+                    obj.__dict__.update(existing.__dict__)
+                obj[nodeID] = value
+                self.__dict__[deviceID] = obj
+                #print "assigning",name,value,"as",deviceID,obj
+            else:
+                self.__dict__[name] = value
+        def eval(self, expr):
+            """
+            Evaluate an expression in a context.
+            """
+            if isinstance(expr, basestring):
+                #import pprint; pprint.pprint(self.__dict__)
+                #print "eval",expr
+                try:
+                    return eval(expr, {}, self.__dict__)
+                except Exception,exc:
+                    print self.__dict__
+                    raise exc.__class__, str(exc) + " when evaluating " + expr
+            else:
+                return expr
 
 
 def load(filename):
@@ -51,13 +108,7 @@ def dryrun(traj, filename="traj.trj"):
     return the sequence of points visited by a trajectory.
     """
 
-    never_write = []
-    always_write = []
-    points = []
-    # Set the initial context to contain sprintf and math functions
-    context = {"sprintf": lambda pattern,*args: pattern%args}
-    context.update((k,v) for k,v in math.__dict__.items()
-                   if not k.startswith('_')) 
+    context = Context()
 
     # Defaults for keywords
     context.update({
@@ -89,12 +140,12 @@ def dryrun(traj, filename="traj.trj"):
             context["_"+k] = v
         elif str(k) in ("trajName", "descr", "neverWrite", "alwaysWrite"):
             # keywords evaluated in the current context
-            context[k] = _eval(v, context)
+            context[k] = context.eval(v)
         else:
             raise ValueError("unknown keyword %r"%k)
 
     # process loops last
-    constants = context.copy()
+    constants = context.state()
 
     # Pretend initial state of file counters.  Define them after constants
     # so that they will show up as columns in the dry run table.  In a
@@ -106,10 +157,10 @@ def dryrun(traj, filename="traj.trj"):
             })
 
     # Point number is set to zero at the start of each trajectory
-    context['pointNum'] = 0
+    context.assign('pointNum', 0)
 
     # run the loops
-    points.extend(_loops(loops,context))
+    points = list(_loops(loops,context))
 
     return points, constants
 
@@ -118,48 +169,15 @@ class JSObject(object):
     def __getitem__(self, k): return self.__dict__[k]
     def __setitem__(self, k, v): self.__dict__[k] = v
 
-def _assign(context, name, value):
-    """
-    Assign a value to a name in the context.  If name is dotted, then assign 
-    to a field of an object, copying the existing object beforehand or creating 
-    a new one if it does not already exist.  The copy-on-write semantics
-    allows us to more easily copy the existing context for later return.
-    """
-    if '.' in name:
-        deviceID, nodeID = name.split('.',1)
-        obj = JSObject()
-        existing = context.get(deviceID, None)
-        if isinstance(existing, JSObject): 
-            obj.__dict__.update(existing.__dict__)
-        obj[nodeID] = value
-        context[deviceID] = obj
-    else:
-        context[name] = value
-
 def _init(traj, context):
     for name,v in traj:
         if hasattr(v,'items'):
             value = JSObject()
             for field_name, field_value in v.items():
-                setattr(value,field_name, _eval(field_value, context))
+                setattr(value,field_name, context.eval(field_value))
         else:
-            value = _eval(v,context)
-        _assign(context, name, value)
-
-def _eval(expr, context):
-    """
-    Evaluate an expression in a context.
-    """
-    if isinstance(expr, basestring):
-        #import pprint; pprint.pprint(context)
-        #print "eval",expr
-        try:
-           return eval(expr, {}, context)
-        except Exception,exc:
-           print context
-           raise exc.__class__, str(exc) + " when evaluating " + expr
-    else:
-        return expr
+            value = context.eval(v)
+        context.assign(name, value)
 
 def _loops(traj, context):
     """
@@ -196,30 +214,33 @@ def _one_loop(traj, context):
             loop_vars.append((var, _list({'value': [value]}, context, cycle=(loop_vars!=[]))))
 
     # Cycle through the loop variables
+    # Since _cycle_context updates the context in place, there is no reason to look at
+    # the _cycle_context yield value.  The _loops yield value, on the other hand, has
+    # a copy of the context, and therefore needs to be forwarded to the caller.
     #print "cycling context"
-    for ctx in _cycle_context(context, loop_vars):
+    for _ in _cycle_context(context, loop_vars):
         if "loops" in traj:
-            for pt in _loops(traj["loops"],ctx): yield pt
+            for pt in _loops(traj["loops"],context): yield pt
         else:
-            _set_file(ctx)
-            _next_point(ctx)
-            yield ctx.copy()  # ctx is a point
+            _set_file(context)
+            _next_point(context)
+            yield context.state()  # ctx is a point
     #print "end oneloop"
 
-def _next_point(ctx):
-    ctx['pointNum'] += 1
-    ctx['expPointNum'] += 1
+def _next_point(context):
+    context['pointNum'] += 1
+    context['expPointNum'] += 1
 
-def _set_file(ctx):
-    group  = _eval(ctx['_fileGroup'], ctx)
-    if group not in ctx['_groups']:
-        ctx['_groups'].add(group)
-        ctx['fileNum'] += 1
-        ctx['instFileNum'] += 1
-    ctx['fileGroup'] = group
-    ctx['filePrefix'] = _eval(ctx['_filePrefix'], ctx)
-    ctx['fileName'] = _eval(ctx['_fileName'], ctx)
-    ctx['entryName'] = _eval(ctx['_entryName'], ctx)
+def _set_file(context):
+    group  = context.eval(context['_fileGroup'])
+    if group not in context['_groups']:
+        context['_groups'].add(group)
+        context['fileNum'] += 1
+        context['instFileNum'] += 1
+    context['fileGroup'] = group
+    context['filePrefix'] = context.eval(context['_filePrefix'])
+    context['fileName'] = context.eval(context['_fileName'])
+    context['entryName'] = context.eval(context['_entryName'])
 
 def _cycle_context(context, loop_vars):
     """
@@ -239,7 +260,7 @@ def _cycle_context(context, loop_vars):
                 if first: return
                 else: raise ValueError("loop ended early for %r"%name)
             first = False
-            _assign(context, name, value)
+            context.assign(name, value)
         #print "yielding context",context
         yield context
 
@@ -313,14 +334,14 @@ def _range(traj, context, logsteps):
     else:
         #print "_range"
         #print "traj",traj
-        #print "ctx",context
+        #print "context",context
         trajcopy = traj.copy()
-        start = _eval(trajcopy.pop("start",None), context)
-        step = _eval(trajcopy.pop("step",None), context)
-        stop = _eval(trajcopy.pop("stop",None), context)
-        n = _eval(trajcopy.pop("n",None), context)
-        center = _eval(trajcopy.pop("center",None), context)
-        width = _eval(trajcopy.pop("width",None), context)
+        start = context.eval(trajcopy.pop("start",None))
+        step = context.eval(trajcopy.pop("step",None))
+        stop = context.eval(trajcopy.pop("stop",None))
+        n = context.eval(trajcopy.pop("n",None))
+        center = context.eval(trajcopy.pop("center",None))
+        width = context.eval(trajcopy.pop("width",None))
         if trajcopy:
             raise ValueError("unknown keys in range "+str(trajcopy))
 
@@ -403,11 +424,11 @@ def _list(traj, context, cycle=True):
         raise ValueError("list has no length "+str(traj))
 
     if not cycle:
-        return (_eval(p, context) for  p in points)
+        return (context.eval(p) for  p in points)
     elif cyclic:
-        return (_eval(p, context) for p in itertools.cycle(points))
+        return (context.eval(p) for p in itertools.cycle(points))
     else:
-        return (_eval(p, context) for p in itertools.chain(iter(points),itertools.repeat(points[-1])))
+        return (context.eval(p) for p in itertools.chain(iter(points),itertools.repeat(points[-1])))
 
 
 def columnate(points, constants):
@@ -640,7 +661,7 @@ def main():
     else: demo(load(sys.argv[1]), sys.argv[1])
 
 def test_ranges():
-    context = {}
+    context = Context()
     def _test_lin(r, expected):
        points = np.array(list(_range(r, context, False)))
        #print r, points, expected
