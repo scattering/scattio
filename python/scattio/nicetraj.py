@@ -3,13 +3,14 @@ from __future__ import division
 
 import os
 import math
-from copy import copy
+from copy import copy, deepcopy
+import itertools
 
 import numpy as np
 import math
 import jsonutil
 import demjson
-from demjson import OrderedDict
+#from demjson import OrderedDict
 
 
 def load(filename):
@@ -26,14 +27,16 @@ def parse(raw):
     """
     #parsed = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(raw)
     #parsed = jsonutil.relaxed_loads(raw, ordered=True)
-    parsed = demjson.decode(raw, allow_ordered_dict=True)
+    #parsed = demjson.decode(raw, allow_ordered_dict=True)
+    parsed = demjson.decode(raw)
     parsed = tostr(parsed)
     return parsed
 
 def tostr(tree):
     """ make unicode to string """
     if hasattr(tree, 'items'):
-        return OrderedDict((str(k),tostr(v)) for k,v in tree.items())
+        #return OrderedDict((str(k),tostr(v)) for k,v in tree.items())
+        return dict((str(k),tostr(v)) for k,v in tree.items())
     elif isinstance(tree, list):
         return [tostr(v) for v in tree]
     elif isinstance(tree, basestring):
@@ -115,20 +118,33 @@ class JSObject(object):
     def __getitem__(self, k): return self.__dict__[k]
     def __setitem__(self, k, v): self.__dict__[k] = v
 
+def _assign(context, name, value):
+    """
+    Assign a value to a name in the context.  If name is dotted, then assign 
+    to a field of an object, copying the existing object beforehand or creating 
+    a new one if it does not already exist.  The copy-on-write semantics
+    allows us to more easily copy the existing context for later return.
+    """
+    if '.' in name:
+        deviceID, nodeID = name.split('.',1)
+        obj = JSObject()
+        existing = context.get(deviceID, None)
+        if isinstance(existing, JSObject): 
+            obj.__dict__.update(existing.__dict__)
+        obj[nodeID] = value
+        context[deviceID] = obj
+    else:
+        context[name] = value
+
 def _init(traj, context):
-    for k,v in traj:
+    for name,v in traj:
         if hasattr(v,'items'):
-            obj = JSObject()
-            context[k] = obj
+            value = JSObject()
             for field_name, field_value in v.items():
-                setattr(obj,field_name, _eval(field_value, context))
-        elif '.' in k:
-            deviceID, nodeID = k.split('.',2)
-            if deviceID not in context or not isinstance(context[deviceID], JSObject):
-                context[deviceID] = JSObject()
-            context[deviceID][nodeID] = _eval(v, context)
+                setattr(value,field_name, _eval(field_value, context))
         else:
-            context[k] = _eval(v, context)
+            value = _eval(v,context)
+        _assign(context, name, value)
 
 def _eval(expr, context):
     """
@@ -149,58 +165,46 @@ def _loops(traj, context):
     """
     Process the loops construct.
     """
+    #print "_loops"
     for section in traj:
         for p in _one_loop(section, context): yield p
+    #print "end loop"
 
 def _one_loop(traj, context):
     """
     Process one of a series of loops in a loops construct.
     """
+    #print "_one_loop"
     extra_keys = set(traj.keys()) - set(('vary','loops'))
     if extra_keys:
         raise ValueError("loop contains extra keys %s"%", ".join(sorted(extra_keys)))
 
     loop_vars = []
-    loop_len = 1
     for var,value in traj["vary"]:
         if hasattr(value, 'items'):
             if "range" in value:
-                loop_vars.append((var, _range(value["range"], context, loop_vars, logsteps=False)))
+                loop_vars.append((var, _range(value["range"], context, logsteps=False)))
             elif "logrange" in value:
-                loop_vars.append((var, _range(value["logrange"], context, loop_vars, logsteps=True)))
+                loop_vars.append((var, _range(value["logrange"], context, logsteps=True)))
             elif "list" in value:
-                loop_vars.append((var, _list(value["list"], context, loop_vars)))
+                loop_vars.append((var, _list(value["list"], context, cycle=(loop_vars!=[]))))
         elif isinstance(value, list):
-            if len(loop_vars):
-                points = [_eval(vi, ctx)
-                          for vi,ctx in zip(value, _cycle_context(context,loop_vars))]
-            else:
-                points = [_eval(vi, context) for vi in value]
-            loop_vars.append((var, points))
+            # lists are implicit noncyclic lists with final repeated
+            loop_vars.append((var, _list({'value': value}, context, cycle=(loop_vars!=[]))))
         else:
-            if len(loop_vars):
-                points = [_eval(value, ctx)
-                          for ctx in _cycle_context(context,loop_vars)]
-            else:
-                points = [_eval(value, context)]
-            loop_vars.append((var, points))
+            # lists are implicit noncyclic lists of length 1 with final repeated
+            loop_vars.append((var, _list({'value': [value]}, context, cycle=(loop_vars!=[]))))
+
+    # Cycle through the loop variables
+    #print "cycling context"
     for ctx in _cycle_context(context, loop_vars):
         if "loops" in traj:
-            for pt in _loops(traj["loops"],ctx): 
-                yield pt
-                _update_global_context(context,ctx)
+            for pt in _loops(traj["loops"],ctx): yield pt
         else:
             _set_file(ctx)
-            yield ctx  # ctx is a point
             _next_point(ctx)
-            _update_global_context(context,ctx)
-
-def _update_global_context(globals,locals):
-    globals['pointNum'] = locals['pointNum']
-    globals['fileNum'] = locals['fileNum']
-    globals['instFileNum'] = locals['instFileNum']
-    globals['expPointNum'] = locals['expPointNum']
-    globals['_groups'] = locals['_groups']
+            yield ctx.copy()  # ctx is a point
+    #print "end oneloop"
 
 def _next_point(ctx):
     ctx['pointNum'] += 1
@@ -221,21 +225,23 @@ def _cycle_context(context, loop_vars):
     """
     Yield a series of contexts with values for prior looping parameters.
     """
-    names, values = zip(*loop_vars)
-    dotted = set(n for n in names if '.' in n)
-    devices = set(n.split('.')[0] for n in dotted)
-    ids = dict((n,n.split('.')) for  n in dotted)
-    for value_set in zip(*values):
-        ctx = context.copy()
-        for n in devices: 
-            ctx[n] = copy(ctx[n]) if n in ctx else JSObject()
-        for n,v in zip(names,value_set):
-            if n in dotted:
-                deviceID, nodeID = ids[n]
-                ctx[deviceID][nodeID] = v
-            else:
-                ctx[n] = v
-        yield ctx
+    while True:
+        # Cycle through all the variables, updating the value.  If the
+        # first variable completes its cycle, then signal an error.  If
+        # subsequent values do not complete their cycles, then ignore
+        # the additional values => no error checking on range sizes.
+        first = True
+        for name,cycle in loop_vars:
+            #print "evaluating",name
+            try: 
+                value = cycle.next()
+            except StopIteration: 
+                if first: return
+                else: raise ValueError("loop ended early for %r"%name)
+            first = False
+            _assign(context, name, value)
+        #print "yielding context",context
+        yield context
 
 def _logrange(start, stop, step):
     if start < stop and step > 1:
@@ -295,14 +301,12 @@ def _n_steps(traj, start, stop, n, logsteps):
         points = np.asarray(points, 'int')
     return points
 
-def _range(traj, context, loop_vars, logsteps):
+def _range(traj, context, logsteps):
     """
     Process the range directive in loop:vary.
 
     Return the list of points generated by the range.
     """
-    loop_len = len(loop_vars[0][1]) if len(loop_vars)>0 else 0
-
     if isinstance(traj, int):
         n = traj
         start = step = stop = center = width = None
@@ -310,7 +314,6 @@ def _range(traj, context, loop_vars, logsteps):
         #print "_range"
         #print "traj",traj
         #print "ctx",context
-        #print "vars",loop_vars
         trajcopy = traj.copy()
         start = _eval(trajcopy.pop("start",None), context)
         step = _eval(trajcopy.pop("step",None), context)
@@ -323,40 +326,39 @@ def _range(traj, context, loop_vars, logsteps):
 
 
     bits = 1*(start is not None) + 2*(stop is not None) + 4*(step is not None) + 8*(n is not None) + 16*(center is not None) + 32*(width is not None)
-    n_or_len = n if n is not None else loop_len
     #print "bits",bits
 
     # There are twenty ways to pick three of start, step, stop, n, center, width
     # Convert these to start, stop, step/n, reverse
     reverse = False
-    if bits in (1+2, 1+2+4, 1+2+8): # start - stop - step/n
+    if bits in (1+2+4, 1+2+8): # start - stop - step/n
         pass # start, stop, step unchanged
 
-    elif bits in (1+16, 1+16+4, 1+16+8): # start - center - step/n
+    elif bits in (1+16+4, 1+16+8): # start - center - step/n
         stop = 2*center - start
-    elif bits in (1+32, 1+32+4, 1+32+8): # start - width - step/n
+    elif bits in (1+32+4, 1+32+8): # start - width - step/n
         stop = start + width
 
-    elif bits in (2+16, 2+16+4, 2+16+8): # stop - center - step/n
+    elif bits in (2+16+4, 2+16+8): # stop - center - step/n
         start = 2*center - stop
         reverse = True
-    elif bits in (2+32, 2+32+4, 2+32+8): # stop - width - step/n
+    elif bits in (2+32+4, 2+32+8): # stop - width - step/n
         start = stop - width
         reverse = True
 
-    elif bits in (16+32, 16+32+4, 16+32+8): # center - width - step/n
+    elif bits in (16+32+4, 16+32+8): # center - width - step/n
         start,stop = center - width/2., center + width/2.
 
-    elif bits in (1+4, 1+4+8): # start - step - n
-        stop = start + (n_or_len-1)*abs(step)
+    elif bits == 1+4+8: # start - step - n
+        stop = start + (n-1)*abs(step)
         step = None # use linspace rather than arange
 
-    elif bits in (2+4, 2+4+8): # stop - step - n
-        start = stop - (n_or_len-1)*abs(step)
+    elif bits == 2+4+8: # stop - step - n
+        start = stop - (n-1)*abs(step)
         step = None # use linspace rather than arange
 
-    elif bits in (16+4, 16+4+8): # center - step - n
-        start, stop = center - (n_or_len-1)*abs(step)/2., center + (n_or_len-1)*abs(step)/2.
+    elif bits == 16+4+8: # center - step - n
+        start, stop = center - (n-1)*abs(step)/2., center + (n-1)*abs(step)/2.
         step = None # use linspace rather than arange
 
     # width - step - n:  no anchor at start, stop or center
@@ -365,32 +367,32 @@ def _range(traj, context, loop_vars, logsteps):
     # start - center - width: no step size or number of steps
     # stop - center - width: no step size or number of steps
 
-    elif bits in (8,0):  # n by itself means 0, 1, ..., n-1
+    elif bits == 8:  # n by itself means 0, 1, ..., n-1
         if logsteps:
-            start, stop = 1, 10**(n_or_len-1)
+            start, stop = 1, 10**(n-1)
         else:
-            start, stop = 0, n_or_len-1
+            start, stop = 0, n-1
 
     else:
         raise ValueError("invalid parameter combination in range "+str(traj))
 
     
-    #print start, stop, step, n_or_len, logsteps, reverse
+    #print start, stop, step, n, logsteps, reverse
     if step is not None:
         points = _delta_steps(traj, start, stop, step, logsteps, reverse)
     else:
-        points = _n_steps(traj, start, stop, n_or_len, logsteps)
+        points = _n_steps(traj, start, stop, n, logsteps)
 
-    if loop_len and len(points) != loop_len:
-        print "wrong number",points, traj
-        raise ValueError("range different from number of points in loop for "+str(traj))
-    return points
+    return iter(points)
 
-def _list(traj, context, loop_vars):
+def _list(traj, context, cycle=True):
     """
     Process the list directive in loop:vary.
 
     Return the list of points generated by the list.
+
+    *cycle* should be false for the first loop variable, or the loop will go on
+    forever.
     """
     trajcopy = traj.copy()
     points = trajcopy.pop("value",[])
@@ -400,19 +402,12 @@ def _list(traj, context, loop_vars):
     if len(points) == 0:
         raise ValueError("list has no length "+str(traj))
 
-    loop_len = len(loop_vars[0][1]) if len(loop_vars)>0 else len(points)
-    if loop_len == 0:
-        # No previous looping variables yet, so no cycle context for points
-        points = [_eval(pt, context) for pt in points]
+    if not cycle:
+        return (_eval(p, context) for  p in points)
     elif cyclic:
-        n = len(points)
-        points = [_eval(points[i%n], ctx)
-                  for i,ctx in enumerate(_cycle_context(context, loop_vars))]
+        return (_eval(p, context) for p in itertools.cycle(points))
     else:
-        n = len(points)-1
-        points = [_eval(points[min(i,n)], ctx)
-                  for i,ctx in enumerate(_cycle_context(context, loop_vars))]
-    return points
+        return (_eval(p, context) for p in itertools.chain(iter(points),itertools.repeat(points[-1])))
 
 
 def columnate(points, constants):
@@ -516,13 +511,13 @@ POLSPEC_EXAMPLE = """
                 "vary": [
                         ["detectorAngle.softPosition", {
                                 "range": {
-                                        "start": 0,"stop": 4,"step": 0.02}
+                                        "start": 0,"stop": 2,"step": 0.2}
                         }],
                         ["sampleAngle", "detectorAngle.softPosition/2.0"],
                         ["slit1Aperture", [1,2,3,4,5]],
                         ["slit2Aperture", {
                                 "list": {
-                                        "value": [1,2,3,1],
+                                        "value": [1,2,3],
                                         "cyclic": true
                                 }
                         }]
@@ -647,14 +642,12 @@ def main():
 def test_ranges():
     context = {}
     def _test_lin(r, expected):
-       loop_vars = [('i',expected)]
-       points = _range(r, context, loop_vars, False) 
+       points = np.array(list(_range(r, context, False)))
        #print r, points, expected
        if np.linalg.norm(points - expected) > 1.e-10:
            print r, points, expected
     def _test_log(r, expected):
-       loop_vars = [('i',expected)]
-       points = _range(r, context, loop_vars, True) 
+       points = np.array(list(_range(r, context, True))) 
        if np.linalg.norm(points - expected) > 1.e-10:
            print r, points, expected
 
