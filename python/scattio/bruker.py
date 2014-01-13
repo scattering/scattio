@@ -341,5 +341,5 @@ def loads(data):
     
 if __name__ == "__main__":
     import sys,pprint
-    pprint.pprint(loads(sys.argv[1]))
+    pprint.pprint(load(sys.argv[1]))
 
