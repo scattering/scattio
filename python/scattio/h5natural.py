@@ -33,19 +33,6 @@ def __getattr__(self, key):
 
 Group.__dir__ = new.instancemethod(__dir__, None, Group)
 Group.__getattr__ = new.instancemethod(__getattr__, None, Group)
-
-
-def data_dir(self):
-    attrs = ['A'+str(s) for s in self.attrs.keys()]
-    return attrs + dir(self.__class__)
-
-def data_getattr(self, key):
-    if key[0] == 'A':
-        return self.attrs[key[1:]]
-    else:
-        raise AttributeError('%r object has not attribute %r'
-                             %(self.__class__.__name__,key))
-
 Dataset.__dir__ = new.instancemethod(__dir__, None, Dataset)
 Dataset.__getattr__ = new.instancemethod(__getattr__, None, Dataset)
 
