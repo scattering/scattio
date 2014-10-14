@@ -112,12 +112,12 @@ def register(ext,loader):
 # Delayed loading of file formats
 def icp_ng7(file):
     """NCNR NG-7 ICP file loader"""
-    from .ng7convert import convert
+    from .ncnr.ng7nxs import convert
     return convert(file, ":entry")
 
 def icp_ng1(file):
     """NCNR NG-7 ICP file loader"""
-    from .ng1convert import convert
+    from .ncnr.ng1nxs import convert
     return convert(file, ":entry")
 
 def nexus(file):
@@ -127,21 +127,21 @@ def nexus(file):
 
 def vax_sans(file):
     """NCNR SANS VAX file loader"""
-    from .sansconvert import convert
+    from .ncnr.sansnxs import convert
     return convert(file, ":entry")
 
 def ice_bt7(file):
     """NCNR BT-7 ICE file loader"""
-    from .bt7convert import convert
+    from .ncnr.bt7nxs import convert
     return convert(file, ":entry")
 
 # Register extensions with file formats
+register('.nxs*', nexus)
+register('NeXus', nexus)
+
 register('.ng7', icp_ng7)
 register('.ng7.gz', icp_ng7)
 register('NCNR NG-7',icp_ng7)
-
-register('.nxs', nexus)
-register('NeXus', nexus)
 
 register('NCNR NG-1', icp_ng1)
 register('.[nc][abcdg]1', icp_ng1)
