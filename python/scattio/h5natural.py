@@ -19,7 +19,7 @@ import new
 # group objects are different from dataset objects
 def __dir__(self):
     attrs = ['A'+str(s) for s in self.attrs.keys()] if hasattr(self,'attrs') else []
-    fields = ['F'+str(s) for s in self.keys()]
+    fields = ['F'+str(s) for s in self.keys()] if hasattr(self,'keys') else []
     return attrs + fields + dir(self.__class__)
 
 def __getattr__(self, key):
