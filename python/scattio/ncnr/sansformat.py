@@ -388,7 +388,7 @@ def decompress(data):
     base = 10000
     idx = data <= -base
     power = numpy.floor(-data[idx]/base)
-    data[idx] = numpy.asarray((-data[idx]%base)*10**power, data.dtype)
+    data[idx] = numpy.asarray(((-data[idx])%base)*10**power, data.dtype)
 
     # Recast as 128x128 array
     data.resize(128,128)
@@ -413,7 +413,7 @@ def compress(data):
     erridx = data > 2767000
     idx = data > 32767
     power = numpy.ceil(numpy.log10(data[idx]))-4
-    mantissa = data[idx] // (base*10**power)
+    mantissa = data[idx] // (10**power)
     data[idx] = numpy.asarray(-(mantissa + power*base), data.dtype)
     data[erridx] = -777
     
